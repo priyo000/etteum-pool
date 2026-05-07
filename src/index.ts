@@ -22,14 +22,16 @@ app.use("*", logger());
 // API Key authentication middleware for proxy endpoints
 app.use("/v1/*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
-  if (!authHeader) {
+  const xApiKey = c.req.header("x-api-key");
+  const token = authHeader?.replace("Bearer ", "") || xApiKey;
+
+  if (!token) {
     return c.json(
       { error: { message: "Missing Authorization header", type: "auth_error" } },
       401
     );
   }
 
-  const token = authHeader.replace("Bearer ", "");
   if (!(await isValidApiKey(token))) {
     return c.json(
       { error: { message: "Invalid API key", type: "auth_error" } },
