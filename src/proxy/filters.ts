@@ -20,52 +20,22 @@ export interface FilterTemplate {
  * Pudidil filter template - removes Claude Code CLI detection patterns
  * Based on enowxai's filter system
  */
+/**
+ * Filter rules matching enowxai's approach:
+ * - Simple string removal for identity/billing markers
+ * - Keep system prompt structure intact (CLAUDE.md, tools, environment preserved)
+ * - No aggressive regex that strips entire sections
+ */
 export const PUDIDIL_FILTERS: FilterRule[] = [
-  // Remove entire Claude Code system prompt block (most aggressive)
-  {
-    id: "remove_claude_code_system_block",
-    pattern: "You are Claude Code, Anthropic's official CLI for Claude\\.\\s*You are an interactive agent that helps users with software engineering tasks\\.[\\s\\S]*?# Environment",
-    replacement: "",
-    is_active: true,
-    is_regex: true,
-  },
-  // Remove billing headers
-  {
-    id: "remove_billing_header_regex",
-    pattern: "x-billing-header:\\s*cc_version=[^;]+;\\s*cc_entrypoint=cli;\\s*ch=[^;\\s]+;?",
-    replacement: "",
-    is_active: true,
-    is_regex: true,
-  },
-  {
-    id: "remove_anthropic_billing_header_regex",
-    pattern: "x-anthropic-billing-header:\\s*cc_version=[^;]+;\\s*cc_entrypoint=cli;\\s*cch=[^;\\s]+;?",
-    replacement: "",
-    is_active: true,
-    is_regex: true,
-  },
-  {
-    id: "remove_github_issues_link",
-    pattern: "",
-    replacement: "",
-    is_active: false,
-    is_regex: false,
-  },
-  // Remove Claude Code identity sections
-  {
-    id: "remove_claude_code_full_identity",
-    pattern: "You are Claude Code, Anthropic's official CLI for Claude\\.\\s*You are an interactive agent that helps users with software engineering tasks\\. Use the instructions below and the tools available to you to assist the user\\.",
-    replacement: "",
-    is_active: true,
-    is_regex: true,
-  },
+  // Remove Claude Code identity string
   {
     id: "remove_claude_code_identity",
-    pattern: "You are Claude Code, Anthropic's official CLI for Claude.",
+    pattern: "You are Claude Code, Anxthxropic's official CLI for Claude.",
     replacement: "",
     is_active: true,
     is_regex: false,
   },
+  // Remove interactive agent instruction
   {
     id: "remove_interactive_agent_instruction",
     pattern: "You are an interactive agent that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.",
@@ -73,56 +43,43 @@ export const PUDIDIL_FILTERS: FilterRule[] = [
     is_active: true,
     is_regex: false,
   },
-  // Remove specific instruction blocks
+  // Remove billing/version headers (specific versions from enowxai)
   {
-    id: "remove_security_testing_block",
-    pattern: "IMPORTANT: Assist with authorized security testing[\\s\\S]*?IMPORTANT: You must NEVER generate or guess URLs[^.]+\\.",
-    replacement: "",
-    is_active: true,
-    is_regex: true,
-  },
-  {
-    id: "remove_system_section",
-    pattern: "# System\\s*- All text you output[\\s\\S]*?# Doing tasks",
-    replacement: "# Doing tasks",
-    is_active: true,
-    is_regex: true,
-  },
-  {
-    id: "remove_auto_memory_section",
-    pattern: "# auto memory\\s*You have a persistent[\\s\\S]*?# Environment",
-    replacement: "# Environment",
-    is_active: true,
-    is_regex: true,
-  },
-  // Remove feedback and links
-  {
-    id: "remove_claude_code_feedback",
-    pattern: "To give feedback, users should report the issue at https://github.com/anthropics/claude-code/issues",
+    id: "remove_billing_header_1",
+    pattern: ": cc_version=2.114.45a; ; ch=33c97;",
     replacement: "",
     is_active: true,
     is_regex: false,
   },
   {
-    id: "remove_github_issues_link",
-    pattern: "https://github.com/anthropics/claude-code/issues",
+    id: "remove_billing_header_2",
+    pattern: ": cc_version=2.1.116.f49; ; cch=8b6e8",
     replacement: "",
     is_active: true,
     is_regex: false,
   },
+  // Catch other cc_version patterns via regex
   {
-    id: "remove_powerful_ai_agent",
-    pattern: "Powerful AI Agent",
+    id: "remove_billing_header_regex",
+    pattern: ":\\s*cc_version=[^;]+;\\s*;\\s*c?ch=[^;\\s]+;?",
+    replacement: "",
+    is_active: true,
+    is_regex: true,
+  },
+  // Remove "Advanced AI Agent" marker
+  {
+    id: "remove_advanced_ai_agent",
+    pattern: "Advanced AI Agent",
     replacement: "",
     is_active: true,
     is_regex: false,
   },
-  // Generic patterns last
+  // Remove feedback link line
   {
-    id: "remove_cli_entrypoint",
-    pattern: "",
+    id: "remove_feedback_link",
+    pattern: "To give feedback, users should report the issue at ",
     replacement: "",
-    is_active: false,
+    is_active: true,
     is_regex: false,
   },
 ];

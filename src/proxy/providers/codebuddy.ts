@@ -532,17 +532,8 @@ export class CodeBuddyProvider extends BaseProvider {
       let content = msg.content;
 
       if (typeof content === "string") {
-        // Detect and replace Claude Code system prompt entirely
-        if (msg.role === "system" && content.includes("You are Claude Code, Anthropic's official CLI for Claude")) {
-          // Replace entire Claude Code system prompt with a clean, generic one
-          cleanedMessages.push({
-            role: "system",
-            content: "You are a helpful AI assistant that helps with software engineering tasks.",
-          });
-          continue;
-        }
-
-        // Simple string content - just apply filters
+        // Apply pudidil filters to remove detection patterns (same as enowxai)
+        // Keeps the rest of the system prompt intact (CLAUDE.md, tools, environment, etc.)
         cleanedMessages.push({
           ...msg,
           content: applyPudidilFilters(content),
