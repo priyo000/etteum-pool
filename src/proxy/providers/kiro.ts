@@ -604,14 +604,47 @@ export class KiroProvider extends BaseProvider {
       userInputMessageContext: context,
     };
 
-    // Kiro API vision: imageInput field + origin=INLINE_CHAT
-    // NOTE: INLINE_CHAT only works on Pro/Enterprise accounts.
-    // Builder ID (free) accounts return empty response with INLINE_CHAT.
-    // Fallback: keep AI_EDITOR origin, image won't be processed but no error.
+    // Kiro API vision: images must be sent via tool result pattern (fs_read simulation).
+    // Format: toolResults[].content = [{text: "Image:"}, {image: {format, source: {bytes}}}]
+    // Requires matching toolUses in history for the toolUseId.
     if (imageBlocks.length > 0) {
-      userInputMessage.imageInput = imageBlocks;
-      userInputMessage.origin = "INLINE_CHAT";
-      if (!textContent) userInputMessage.content = "Describe this image.";
+      const imageToolId = `img_${crypto.randomUUID().slice(0, 8)}`;
+      const imageToolContent: any[] = [{ text: "Image content:" }];
+      for (const img of imageBlocks) {
+        imageToolContent.push({ image: img });
+      }
+      context.toolResults = [{
+        toolUseId: imageToolId,
+        content: imageToolContent,
+        status: "success",
+      }];
+      // Add synthetic history: user asked to read image -> assistant called fs_read
+      history.push(
+        {
+          userInputMessage: {
+            content: "Read the attached image",
+            modelId: actualModel,
+            origin: "AI_EDITOR",
+            userInputMessageContext: { tools: [] },
+          },
+        },
+        {
+          assistantResponseMessage: {
+            content: "Reading the image.",
+            toolUses: [{ toolUseId: imageToolId, name: "fs_read", input: { path: "image.png", mode: "Image" } }],
+          },
+        }
+      );
+      // Ensure fs_read tool is in tools list
+      if (!tools.some((t: any) => t?.toolSpecification?.name === "fs_read")) {
+        tools.push({
+          toolSpecification: {
+            name: "fs_read",
+            description: "Read file content including images",
+            inputSchema: { json: { type: "object", properties: { path: { type: "string" }, mode: { type: "string" } } } },
+          },
+        });
+      }
     }
 
     const body: Record<string, unknown> = {
