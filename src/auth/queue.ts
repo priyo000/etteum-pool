@@ -11,6 +11,7 @@ interface QueueItem {
   accountId: number;
   retries: number;
   headless?: boolean;
+  generation: number;
 }
 
 interface BulkAddItem {
@@ -40,7 +41,7 @@ class LoginQueue {
     if (this.hasPendingOrActive(accountId)) {
       return;
     }
-    this.queue.push({ accountId, retries: 0, headless: options.headless });
+    this.queue.push({ accountId, retries: 0, headless: options.headless, generation: this.clearGeneration });
     const log = addAuthLog({
       type: "queue_added",
       accountId,
@@ -239,7 +240,8 @@ class LoginQueue {
     } else {
       if (item.retries < this.maxRetries) {
         // Re-queue with incremented retry count and delay
-        const retryGeneration = this.clearGeneration;
+        if (item.generation !== this.clearGeneration) return;
+        const retryGeneration = item.generation;
         const timer = setTimeout(() => {
           this.retryTimers.delete(item.accountId);
           if (retryGeneration !== this.clearGeneration) return;
@@ -248,7 +250,7 @@ class LoginQueue {
             this.process();
             return;
           }
-          this.queue.push({ accountId: item.accountId, retries: item.retries + 1, headless: item.headless });
+          this.queue.push({ accountId: item.accountId, retries: item.retries + 1, headless: item.headless, generation: retryGeneration });
           this.process();
         }, Math.min(2000 * Math.pow(2, item.retries), 15000)); // exponential backoff
         if (retryGeneration === this.clearGeneration) this.retryTimers.set(item.accountId, timer);
