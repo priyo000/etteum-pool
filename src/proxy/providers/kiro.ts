@@ -604,8 +604,10 @@ export class KiroProvider extends BaseProvider {
 
     // Kiro API: images go in userInputMessage.imageInput
     // Format: [{format: "png", source: {bytes: "<pure_base64>"}}]
+    // IMPORTANT: origin must be "INLINE_CHAT" for vision to work (not "AI_EDITOR")
     if (imageBlocks.length > 0) {
       userInputMessage.imageInput = imageBlocks;
+      userInputMessage.origin = "INLINE_CHAT";
       // When images present, content must not be empty
       if (!textContent) userInputMessage.content = "Describe this image.";
     }
