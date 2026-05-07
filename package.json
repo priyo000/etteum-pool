@@ -8,6 +8,8 @@
     "dashboard": "cd dashboard && bunx vite --host 0.0.0.0 --port ${DASHBOARD_PORT:-1731}",
     "dev": "bun run scripts/start.ts",
     "start": "bun run scripts/start.ts",
+    "production": "bun run scripts/production.ts",
+    "production:skip": "bun run scripts/production.ts --skip-build",
     "test": "bun test",
     "db:generate": "bunx drizzle-kit generate",
     "db:migrate": "bunx drizzle-kit migrate",

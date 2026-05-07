@@ -69,26 +69,65 @@ app.route("/", proxyRouter); // /v1/chat/completions, /v1/models
 app.route("/api", apiRouter); // /api/accounts, /api/settings, /api/stats
 app.route("/api/auth", authRouter); // /api/auth/login, /api/auth/queue
 
-// Root endpoint
-app.get("/", (c) => {
-  return c.json({
-    name: "pool-proxy",
-    version: "1.0.0",
-    status: "running",
-    endpoints: {
-      proxy: "/v1/chat/completions",
-      anthropic: "/v1/messages",
-      models: "/v1/models",
-      accounts: "/api/accounts",
-      stats: "/api/stats",
-      settings: "/api/settings",
-      auth: "/api/auth",
-      health: "/api/health",
-      websocket: "/ws",
-    },
-    wsClients: getClientCount(),
+// --- Production: serve dashboard static files from dashboard/dist ---
+const dashboardDistPath = new URL("../dashboard/dist", import.meta.url).pathname;
+const dashboardIndexPath = `${dashboardDistPath}/index.html`;
+const hasDashboardBuild = await Bun.file(dashboardIndexPath).exists();
+
+if (hasDashboardBuild) {
+  // Serve static assets (js, css, images, etc.)
+  app.get("/assets/*", async (c) => {
+    const filePath = `${dashboardDistPath}${c.req.path}`;
+    const file = Bun.file(filePath);
+    if (await file.exists()) {
+      return new Response(file);
+    }
+    return c.notFound();
   });
-});
+
+  // Serve other static files (favicon, manifest, etc.)
+  app.get("/vite.svg", async (c) => {
+    const file = Bun.file(`${dashboardDistPath}/vite.svg`);
+    if (await file.exists()) return new Response(file);
+    return c.notFound();
+  });
+
+  // SPA fallback: serve index.html for non-API/non-WS routes
+  app.get("*", async (c) => {
+    const path = c.req.path;
+    // Skip API, proxy, and websocket paths
+    if (path.startsWith("/v1") || path.startsWith("/api") || path === "/ws") {
+      return c.notFound();
+    }
+    return new Response(Bun.file(dashboardIndexPath), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  });
+
+  console.log(`[Dashboard] Serving production build from dashboard/dist`);
+} else {
+  // No dashboard build — show API info at root
+  app.get("/", (c) => {
+    return c.json({
+      name: "pool-proxy",
+      version: "1.0.0",
+      status: "running",
+      dashboard: "Not built. Run: cd dashboard && bun run build",
+      endpoints: {
+        proxy: "/v1/chat/completions",
+        anthropic: "/v1/messages",
+        models: "/v1/models",
+        accounts: "/api/accounts",
+        stats: "/api/stats",
+        settings: "/api/settings",
+        auth: "/api/auth",
+        health: "/api/health",
+        websocket: "/ws",
+      },
+      wsClients: getClientCount(),
+    });
+  });
+}
 
 // Start server with WebSocket support
 const server = Bun.serve({
@@ -116,6 +155,7 @@ console.log(`
 ║  HTTP:      http://localhost:${config.port}               ║
 ║  WebSocket: ws://localhost:${config.port}/ws              ║
 ║  Database:  PostgreSQL                           ║
+║  Dashboard: ${hasDashboardBuild ? `http://localhost:${config.port}` : "not built"}               ║
 ╠══════════════════════════════════════════════════╣
 ║  Endpoints:                                      ║
 ║    POST /v1/chat/completions  (proxy)            ║

@@ -1,0 +1,32 @@
+# systemd user service for PoolProx2 (production mode)
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp poolprox2.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable poolprox2
+#   systemctl --user start poolprox2
+#
+# Commands:
+#   systemctl --user status poolprox2
+#   systemctl --user restart poolprox2
+#   systemctl --user stop poolprox2
+#   journalctl --user -u poolprox2 -f
+#
+# To survive logout:
+#   loginctl enable-linger $USER
+
+[Unit]
+Description=PoolProx2 - Pool Proxy Server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/priyo/dev/OpenProject/poolprox2
+ExecStart=/home/priyo/.bun/bin/bun run production:skip
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=default.target
