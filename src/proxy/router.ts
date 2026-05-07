@@ -43,6 +43,7 @@ export async function routeRequest(
   request: ChatCompletionRequest,
   stream: boolean
 ): Promise<RouteResult> {
+  const hasImages = requestHasImages(request);
   const providerName = pool.getProviderForModel(request.model);
   if (!providerName) {
     throw new Error(`No provider found for model: ${request.model}`);
@@ -54,7 +55,7 @@ export async function routeRequest(
   }
 
   // Reject image requests for models that don't support vision
-  if (requestHasImages(request)) {
+  if (hasImages) {
     const modelInfo = provider.getModelInfo(request.model);
     if (modelInfo && !modelInfo.vision) {
       throw new Error(

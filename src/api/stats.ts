@@ -23,6 +23,12 @@ function sqlString(value: string) {
   return sql.raw(`'${value.replace(/'/g, "''")}'`);
 }
 
+function clampNumber(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
 function usageBucketExpr(grain: "hour" | "day" | "month", timeZone: string) {
   const timeZoneSql = sqlString(timeZone);
   const localCreatedAt = sql`(${requestLogs.createdAt} AT TIME ZONE 'UTC') AT TIME ZONE ${timeZoneSql}`;
@@ -74,8 +80,8 @@ statsRouter.get("/", async (c) => {
  * GET /api/stats/requests - Get recent request logs
  */
 statsRouter.get("/requests", async (c) => {
-  const limit = Number(c.req.query("limit")) || 50;
-  const offset = Number(c.req.query("offset")) || 0;
+  const limit = clampNumber(c.req.query("limit"), 50, 1, 500);
+  const offset = clampNumber(c.req.query("offset"), 0, 0, 100_000);
   const provider = c.req.query("provider");
 
   const baseQuery = provider
@@ -105,7 +111,7 @@ statsRouter.get("/requests/:id", async (c) => {
  */
 statsRouter.get("/usage", async (c) => {
   const range = c.req.query("range");
-  const hours = Number(c.req.query("hours")) || 24;
+  const hours = clampNumber(c.req.query("hours"), 24, 1, 24 * 365);
   const timeZone = normalizeTimeZone(c.req.query("timeZone"));
   const isAll = range === "all";
   const since = new Date(Date.now() - hours * 60 * 60 * 1000);

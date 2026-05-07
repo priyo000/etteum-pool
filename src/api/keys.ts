@@ -5,6 +5,9 @@ import { eq } from "drizzle-orm";
 import { config } from "../config";
 
 const API_KEY_SETTING = "api_key";
+const API_KEY_CACHE_TTL_MS = 5_000;
+
+let activeApiKeyCache: { key: string; expiresAt: number } | null = null;
 
 export const keysRouter = new Hono();
 
@@ -18,8 +21,15 @@ function generateApiKey(): string {
 }
 
 export async function getActiveApiKey(): Promise<string> {
+  const now = Date.now();
+  if (activeApiKeyCache && activeApiKeyCache.expiresAt > now) {
+    return activeApiKeyCache.key;
+  }
+
   const [row] = await db.select().from(settings).where(eq(settings.key, API_KEY_SETTING));
-  return row?.value || config.apiKey;
+  const key = row?.value || config.apiKey;
+  activeApiKeyCache = { key, expiresAt: now + API_KEY_CACHE_TTL_MS };
+  return key;
 }
 
 export async function isValidApiKey(token: string): Promise<boolean> {
@@ -36,6 +46,7 @@ async function saveApiKey(key: string) {
   } else {
     await db.insert(settings).values({ key: API_KEY_SETTING, value: key });
   }
+  activeApiKeyCache = { key, expiresAt: Date.now() + API_KEY_CACHE_TTL_MS };
 }
 
 keysRouter.get("/", async (c) => {

@@ -2,7 +2,7 @@ import StatsCards from "@/components/dashboard/StatsCards";
 import ProviderCards from "@/components/dashboard/ProviderCards";
 import TokenUsage from "@/components/dashboard/TokenUsage";
 import { useEffect, useState } from "react";
-import { fetchDashboardStats, fetchModelUsage, fetchProviders } from "@/lib/api";
+import { fetchDashboardStats, fetchModelUsage, fetchProviders, runPollingLoop } from "@/lib/api";
 import { modelColor } from "@/lib/utils";
 
 const providerMeta: Record<string, { name: string; color: string; bgColor: string }> = {
@@ -19,15 +19,17 @@ export default function Dashboard() {
   const [modelStats, setModelStats] = useState<any[]>([]);
 
   async function load() {
-    fetchDashboardStats().then(setStats).catch(() => setStats(null));
-    fetchProviders().then((res: { data: any[] }) => setProviders(res.data || [])).catch(() => setProviders([]));
-    fetchModelUsage().then((res: { data: any[] }) => setModelStats(res.data || [])).catch(() => setModelStats([]));
+    await Promise.all([
+      fetchDashboardStats().then(setStats).catch(() => setStats(null)),
+      fetchProviders().then((res: { data: any[] }) => setProviders(res.data || [])).catch(() => setProviders([])),
+      fetchModelUsage().then((res: { data: any[] }) => setModelStats(res.data || [])).catch(() => setModelStats([])),
+    ]);
   }
 
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+    runPollingLoop(load, 5000, controller.signal);
+    return () => controller.abort();
   }, []);
 
   const totalRequests = Number(stats?.requests?.total || 0);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,8 +56,12 @@ export default function Accounts() {
   const [bulkProviders, setBulkProviders] = useState<Provider[]>(["kiro", "codebuddy", "canva"]);
   const [bulkHeadless, setBulkHeadless] = useState(true);
   const [bulkConcurrency, setBulkConcurrency] = useState(2);
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingRef = useRef(false);
 
   async function load() {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const [accountsRes, queueRes, warmupQueueRes] = await Promise.all([
@@ -71,11 +75,17 @@ export default function Accounts() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    return () => {
+      if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const active = Number(warmupQueue?.active || 0) + Number(queue?.active || 0);
@@ -84,7 +94,12 @@ export default function Accounts() {
     return () => clearInterval(interval);
   }, [warmupQueue?.active, queue?.active]);
 
-  function showSuccess(text: string) { setMessage(text); setError(null); setTimeout(() => setMessage(null), 4000); }
+  function showSuccess(text: string) {
+    setMessage(text);
+    setError(null);
+    if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
+    messageTimerRef.current = setTimeout(() => setMessage(null), 4000);
+  }
   function showError(err: unknown) { setError(err instanceof Error ? err.message : String(err)); setMessage(null); }
 
   async function handleAdd() {

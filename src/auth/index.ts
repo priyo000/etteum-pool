@@ -10,12 +10,22 @@ import { clearAuthLogs, getAuthLogs } from "./logs";
 
 export const authRouter = new Hono();
 
+function clampNumber(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
+function emptyLoginOptions(): { headless?: boolean } {
+  return {};
+}
+
 /**
  * POST /api/auth/login/:id - Login a specific account
  */
 authRouter.post("/login/:id", async (c) => {
   const id = Number(c.req.param("id"));
-  const body = await c.req.json<{ headless?: boolean }>().catch(() => ({}));
+  const body = await c.req.json<{ headless?: boolean }>().catch(emptyLoginOptions);
   const [account] = await db
     .select()
     .from(accounts)
@@ -33,7 +43,7 @@ authRouter.post("/login/:id", async (c) => {
  * POST /api/auth/login-all - Login all pending accounts
  */
 authRouter.post("/login-all", async (c) => {
-  const body = await c.req.json<{ headless?: boolean }>().catch(() => ({}));
+  const body = await c.req.json<{ headless?: boolean }>().catch(emptyLoginOptions);
   const count = await loginQueue.queueAllPending({ headless: body.headless });
   return c.json({ message: `Queued ${count} accounts for login`, count });
 });
@@ -42,7 +52,7 @@ authRouter.post("/login-all", async (c) => {
  * POST /api/auth/login-bulk - Login specific accounts by IDs
  */
 authRouter.post("/login-bulk", async (c) => {
-  const body = await c.req.json<{ accountIds: number[]; headless?: boolean }>();
+  const body: { accountIds?: number[]; headless?: boolean } = await c.req.json().catch(() => ({}));
 
   if (!body.accountIds || !Array.isArray(body.accountIds)) {
     return c.json({ error: "accountIds array is required" }, 400);
@@ -196,7 +206,7 @@ authRouter.get("/queue", (c) => {
  * GET /api/auth/logs - Get bot login progress logs
  */
 authRouter.get("/logs", (c) => {
-  const limit = Number(c.req.query("limit")) || 200;
+  const limit = clampNumber(c.req.query("limit"), 200, 1, 1_000);
   return c.json({ data: getAuthLogs(limit) });
 });
 
@@ -270,7 +280,8 @@ authRouter.get("/warmup-queue", (c) => {
 });
 
 authRouter.get("/warmup-events", (c) => {
-  const logs = getAuthLogs(Number(c.req.query("limit")) || 300).filter((log) => log.type.startsWith("warmup_"));
+  const limit = clampNumber(c.req.query("limit"), 300, 1, 1_000);
+  const logs = getAuthLogs(limit).filter((log) => log.type.startsWith("warmup_"));
   return c.json({ data: logs });
 });
 

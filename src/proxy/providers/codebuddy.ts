@@ -483,16 +483,6 @@ export class CodeBuddyProvider extends BaseProvider {
     return /banned|disabled|suspended|no-permission|no-client-author/.test(text);
   }
 
-  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   private async makeRequest(
     tokens: CodeBuddyTokens,
     request: ChatCompletionRequest,
@@ -542,11 +532,7 @@ export class CodeBuddyProvider extends BaseProvider {
 
       if (typeof content === "string") {
         // Detect and replace Claude Code system prompt entirely
-        if (msg.role === "system" && (
-          content.includes("You are Claude Code, Anthropic's official CLI for Claude") ||
-          content.includes("x-anthropic-billing-header") ||
-          content.includes("cc_entrypoint=cli")
-        )) {
+        if (msg.role === "system" && content.includes("You are Claude Code, Anthropic's official CLI for Claude")) {
           // Replace entire Claude Code system prompt with a clean, generic one
           cleanedMessages.push({
             role: "system",
@@ -692,11 +678,11 @@ export class CodeBuddyProvider extends BaseProvider {
       body.reasoning = { effort: "high" };
     }
 
-    return fetch(`${this.baseUrl}/v2/chat/completions`, {
+    return this.fetchWithTimeout(`${this.baseUrl}/v2/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-    });
+    }, 120_000);
   }
 
   private async parseResponse(response: Response, model: string): Promise<ProviderResult> {

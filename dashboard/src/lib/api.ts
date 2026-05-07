@@ -11,26 +11,68 @@ function getApiKey(): string {
   return localStorage.getItem("api_key") || "pool-proxy-secret-key";
 }
 
-export async function fetchApi<T = any>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${getApiKey()}`,
-      ...options?.headers,
-    },
-  });
-  if (!res.ok) {
-    let message = `API error: ${res.status}`;
-    try {
-      const body = await res.json();
-      message = body.error || body.message || message;
-    } catch {
-      // ignore non-json errors
-    }
-    throw new Error(message);
+type FetchApiOptions = RequestInit & { timeoutMs?: number };
+
+export async function fetchApi<T = any>(path: string, options?: FetchApiOptions): Promise<T> {
+  const { timeoutMs = 30_000, signal, ...fetchOptions } = options || {};
+  const controller = new AbortController();
+  const abortOnSignal = () => controller.abort(signal?.reason);
+  const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener("abort", abortOnSignal, { once: true });
   }
-  return res.json();
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${getApiKey()}`,
+        ...fetchOptions.headers,
+      },
+    });
+
+    if (!res.ok) {
+      let message = `API error: ${res.status}`;
+      try {
+        const body = await res.json();
+        message = body.error || body.message || message;
+      } catch {
+        const text = await res.text().catch(() => "");
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
+
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return text ? JSON.parse(text) : (undefined as T);
+  } finally {
+    if (timer) clearTimeout(timer);
+    signal?.removeEventListener("abort", abortOnSignal);
+  }
+}
+
+export function clampLimit(value: number, fallback: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function runPollingLoop(fn: () => Promise<void>, intervalMs: number, signal: AbortSignal) {
+  while (!signal.aborted) {
+    await fn().catch(() => {});
+    await Promise.race([
+      sleep(intervalMs),
+      new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true })),
+    ]);
+  }
 }
 
 export async function fetchDashboardStats() {
@@ -88,12 +130,14 @@ export async function fetchWarmupQueue() {
 }
 
 export async function fetchWarmupEvents(limit: number = 300) {
-  return fetchApi(`/api/auth/warmup-events?limit=${limit}`);
+  return fetchApi(`/api/auth/warmup-events?limit=${clampLimit(limit, 300, 1, 1000)}`);
 }
 
 export async function fetchRequests(page: number = 1, limit: number = 50, provider?: string) {
-  const offset = (page - 1) * limit;
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const safeLimit = clampLimit(limit, 50, 1, 500);
+  const safePage = clampLimit(page, 1, 1, 1000);
+  const offset = (safePage - 1) * safeLimit;
+  const params = new URLSearchParams({ limit: String(safeLimit), offset: String(offset) });
   if (provider && provider !== "all") params.set("provider", provider);
   return fetchApi(`/api/stats/requests?${params.toString()}`);
 }
@@ -157,7 +201,7 @@ export async function fetchAuthQueue() {
 }
 
 export async function fetchAuthLogs(limit: number = 200) {
-  return fetchApi(`/api/auth/logs?limit=${limit}`);
+  return fetchApi(`/api/auth/logs?limit=${clampLimit(limit, 200, 1, 1000)}`);
 }
 
 export async function clearAuthLogs() {

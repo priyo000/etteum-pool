@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { routeRequest, getAllModels, providers } from "./router";
 import { db } from "../db/index";
-import { accounts, requestLogs } from "../db/schema";
+import { accounts, requestLogs, type NewRequestLog } from "../db/schema";
 import { broadcast } from "../ws/index";
 import type { ChatCompletionRequest, CreditSource } from "./providers/base";
 import {
@@ -81,6 +81,29 @@ function estimateTokensFromText(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
+function isJsonParseError(error: unknown): boolean {
+  return error instanceof SyntaxError ||
+    (error instanceof Error && /json|parse|unexpected end|unexpected token/i.test(error.message));
+}
+
+function openAIErrorResponse(message: string, status: 400 | 503) {
+  return {
+    error: {
+      message,
+      type: status === 400 ? "invalid_request_error" : "server_error",
+      code: status === 400 ? "invalid_json" : "proxy_error",
+    },
+  };
+}
+
+async function logProxyError(entry: NewRequestLog, label: string) {
+  try {
+    await db.insert(requestLogs).values(entry);
+  } catch (logError) {
+    console.error(`[Proxy] Failed to log ${label}:`, logError);
+  }
+}
+
 function wrapStreamWithUsageFinalizer(
   stream: ReadableStream<Uint8Array>,
   context: {
@@ -106,6 +129,7 @@ function wrapStreamWithUsageFinalizer(
   let completionTokens = 0;
   let totalTokens = 0;
   let upstreamCredits = 0;
+  let finalized = false;
 
   const observe = (chunk: Uint8Array) => {
     buffer += decoder.decode(chunk, { stream: true });
@@ -127,6 +151,9 @@ function wrapStreamWithUsageFinalizer(
   };
 
   const finalize = () => {
+    if (finalized) return;
+    finalized = true;
+
     const finalPromptTokens = promptTokens || context.fallbackPromptTokens;
     const finalCompletionTokens = completionTokens || estimateTokensFromText(streamedContent) || context.fallbackCompletionTokens;
     const finalTotalTokens = totalTokens || finalPromptTokens + finalCompletionTokens || context.fallbackTotalTokens;
@@ -213,7 +240,11 @@ function wrapStreamWithUsageFinalizer(
         controller.error(error);
         return;
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // The stream may already be closed/cancelled by the client.
+        }
         finalize();
       }
     },
@@ -330,7 +361,15 @@ proxyRouter.get("/v1/models", (c) => {
  * POST /v1/chat/completions - Chat completion (streaming + non-streaming)
  */
 proxyRouter.post("/v1/chat/completions", async (c) => {
-  const body = await c.req.json<ChatCompletionRequest>();
+  let body: ChatCompletionRequest;
+  try {
+    body = await c.req.json<ChatCompletionRequest>();
+  } catch (error) {
+    if (isJsonParseError(error)) {
+      return c.json(openAIErrorResponse("Invalid JSON request body", 400), 400);
+    }
+    throw error;
+  }
 
   // Validate request
   if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
@@ -382,8 +421,8 @@ proxyRouter.post("/v1/chat/completions", async (c) => {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
 
-    // Log the error
-    await db.insert(requestLogs).values({
+    // Log the error without masking the original proxy failure.
+    await logProxyError({
       provider: "unknown",
       model: body.model,
       status: "error",
@@ -391,7 +430,7 @@ proxyRouter.post("/v1/chat/completions", async (c) => {
       requestBody: prepareLogBody(body),
       responseBody: prepareLogBody({ error: errorMessage }),
       durationMs: 0,
-    });
+    }, "chat completion error");
 
     broadcast({
       type: "request_error",
@@ -418,7 +457,15 @@ proxyRouter.post("/v1/chat/completions", async (c) => {
  * POST /v1/messages - Anthropic Messages-compatible endpoint
  */
 proxyRouter.post("/v1/messages", async (c) => {
-  const body = await c.req.json<AnthropicMessagesRequest>();
+  let body: AnthropicMessagesRequest;
+  try {
+    body = await c.req.json<AnthropicMessagesRequest>();
+  } catch (error) {
+    if (isJsonParseError(error)) {
+      return c.json({ type: "error", error: { type: "invalid_request_error", message: "Invalid JSON request body" } }, 400);
+    }
+    throw error;
+  }
 
   if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
     return c.json({ type: "error", error: { type: "invalid_request_error", message: "messages is required and must be a non-empty array" } }, 400);
@@ -447,7 +494,7 @@ proxyRouter.post("/v1/messages", async (c) => {
     return c.json(openAIToAnthropic(result.response, body));
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    await db.insert(requestLogs).values({
+    await logProxyError({
       provider: "unknown",
       model: body.model,
       status: "error",
@@ -455,7 +502,7 @@ proxyRouter.post("/v1/messages", async (c) => {
       requestBody: prepareLogBody(body),
       responseBody: prepareLogBody({ error: errorMessage }),
       durationMs: 0,
-    });
+    }, "messages error");
 
     broadcast({ type: "request_error", data: { model: body.model, error: errorMessage } });
 

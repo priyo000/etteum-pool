@@ -37,8 +37,7 @@ export class KiroProvider extends BaseProvider {
     // then scale by multiplier. This is an approximation since Kiro doesn't bill per-token.
 
     // Auto (1.0x baseline) — ~0.008/1K
-    // Vision: Kiro API requires INLINE_CHAT origin which only works on Pro accounts.
-    // Builder ID (free) accounts get empty responses. Vision routed to CodeBuddy instead.
+    // Vision: images are sent via userInputMessage.images for Kiro upstream.
     { id: "auto", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.008 / 1000, creditSource: "estimated" },
     // Claude Haiku 4.5 (0.4x) — ~0.003/1K
     { id: "claude-haiku-4.5", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.003 / 1000, creditSource: "estimated" },
@@ -445,16 +444,6 @@ export class KiroProvider extends BaseProvider {
     }, 15000);
   }
 
-  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   private parseUsageLimits(payload: unknown): ProviderQuotaSnapshot {
     const root = payload as any;
     const usageBreakdown = Array.isArray(root?.usageBreakdownList) ? root.usageBreakdownList : [];
@@ -594,8 +583,9 @@ export class KiroProvider extends BaseProvider {
     const context: Record<string, unknown> = { tools };
     if (toolResults.length > 0) context.toolResults = toolResults;
 
-    const textContent = [systemPrompt, this.textFromContent(lastUser?.content || "")].filter(Boolean).join("\n\n");
-    const imageBlocks = this.extractImageBlocks(lastUser?.content);
+    const userTextContent = this.textFromContent(lastUser?.content || "");
+    const imageBlocks = this.extractImageBlocks(lastUser?.content || "").slice(0, 10);
+    const textContent = [systemPrompt, userTextContent].filter(Boolean).join("\n\n");
 
     const userInputMessage: Record<string, unknown> = {
       content: textContent,
@@ -604,47 +594,8 @@ export class KiroProvider extends BaseProvider {
       userInputMessageContext: context,
     };
 
-    // Kiro API vision: images must be sent via tool result pattern (fs_read simulation).
-    // Format: toolResults[].content = [{text: "Image:"}, {image: {format, source: {bytes}}}]
-    // Requires matching toolUses in history for the toolUseId.
     if (imageBlocks.length > 0) {
-      const imageToolId = `img_${crypto.randomUUID().slice(0, 8)}`;
-      const imageToolContent: any[] = [{ text: "Image content:" }];
-      for (const img of imageBlocks) {
-        imageToolContent.push({ image: img });
-      }
-      context.toolResults = [{
-        toolUseId: imageToolId,
-        content: imageToolContent,
-        status: "success",
-      }];
-      // Add synthetic history: user asked to read image -> assistant called fs_read
-      history.push(
-        {
-          userInputMessage: {
-            content: "Read the attached image",
-            modelId: actualModel,
-            origin: "AI_EDITOR",
-            userInputMessageContext: { tools: [] },
-          },
-        },
-        {
-          assistantResponseMessage: {
-            content: "Reading the image.",
-            toolUses: [{ toolUseId: imageToolId, name: "fs_read", input: { path: "image.png", mode: "Image" } }],
-          },
-        }
-      );
-      // Ensure fs_read tool is in tools list
-      if (!tools.some((t: any) => t?.toolSpecification?.name === "fs_read")) {
-        tools.push({
-          toolSpecification: {
-            name: "fs_read",
-            description: "Read file content including images",
-            inputSchema: { json: { type: "object", properties: { path: { type: "string" }, mode: { type: "string" } } } },
-          },
-        });
-      }
+      userInputMessage.images = imageBlocks;
     }
 
     const body: Record<string, unknown> = {
@@ -666,11 +617,11 @@ export class KiroProvider extends BaseProvider {
 
     // Amazon Q/Kiro endpoint is not OpenAI-compatible. It expects this REST path;
     // using `/` or `/chat/completions` returns UnknownOperationException.
-    return fetch(`${this.baseUrl}/generateAssistantResponse`, {
+    return this.fetchWithTimeout(`${this.baseUrl}/generateAssistantResponse`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-    });
+    }, 120_000);
   }
 
   private async parseResponse(response: Response, request: ChatCompletionRequest): Promise<ProviderResult> {

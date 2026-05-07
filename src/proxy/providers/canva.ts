@@ -173,11 +173,11 @@ export class CanvaProvider extends BaseProvider {
       style: "auto",
     };
 
-    return fetch(`${this.baseUrl}/_ajax/ai/image/generate`, {
+    return this.fetchWithTimeout(`${this.baseUrl}/_ajax/ai/image/generate`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-    });
+    }, 120_000);
   }
 
   private async parseResponse(response: Response, model: string): Promise<ProviderResult> {

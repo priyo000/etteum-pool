@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,6 +113,7 @@ export default function BotLogs() {
   const [warmupQueue, setWarmupQueue] = useState<any>(null);
   const [connected, setConnected] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const queueRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function load() {
     const [logRes, queueRes, warmupQueueRes] = await Promise.all([
@@ -126,6 +127,33 @@ export default function BotLogs() {
   }
 
   useEffect(() => {
+    let mounted = true;
+    let refreshingQueues = false;
+
+    async function refreshQueues() {
+      if (refreshingQueues || !mounted) return;
+      refreshingQueues = true;
+      try {
+        const [queueRes, warmupQueueRes] = await Promise.all([
+          fetchAuthQueue().catch(() => null),
+          fetchWarmupQueue().catch(() => null),
+        ]);
+        if (!mounted) return;
+        setQueue(queueRes);
+        setWarmupQueue(warmupQueueRes);
+      } finally {
+        refreshingQueues = false;
+      }
+    }
+
+    function scheduleQueueRefresh() {
+      if (queueRefreshTimerRef.current) return;
+      queueRefreshTimerRef.current = setTimeout(() => {
+        queueRefreshTimerRef.current = null;
+        refreshQueues();
+      }, 300);
+    }
+
     load().catch(() => {});
 
     const ws = new WebSocket(`${getWsBase()}/ws`);
@@ -154,14 +182,18 @@ export default function BotLogs() {
           data,
         };
         setLogs((current) => mergeLogs(current, [log]));
-        fetchAuthQueue().then(setQueue).catch(() => {});
-        fetchWarmupQueue().then(setWarmupQueue).catch(() => {});
+        scheduleQueueRefresh();
       } catch {
         // ignore invalid ws messages
       }
     };
 
     return () => {
+      mounted = false;
+      if (queueRefreshTimerRef.current) {
+        clearTimeout(queueRefreshTimerRef.current);
+        queueRefreshTimerRef.current = null;
+      }
       ws.close();
     };
   }, []);

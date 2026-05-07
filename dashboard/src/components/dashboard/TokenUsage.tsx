@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import UsageChart from "./UsageChart";
 import { formatNumber, parseUtcDate } from "@/lib/utils";
-import { fetchUsage } from "@/lib/api";
+import { fetchUsage, runPollingLoop } from "@/lib/api";
 
 interface TokenStats {
   total: number;
@@ -157,19 +157,16 @@ export default function TokenUsage({
 
   useEffect(() => {
     const hours = getChartHours(period);
-    fetchUsage(hours, period === "all" ? "all" : undefined)
-      .then((res: { data: Array<{ hour: string; provider?: string; model?: string; tokens?: number }> }) => {
+    const controller = new AbortController();
+    runPollingLoop(async () => {
+      try {
+        const res = await fetchUsage(hours, period === "all" ? "all" : undefined) as { data: Array<{ hour: string; provider?: string; model?: string; tokens?: number }> };
         setChartData(rowsToModelChart(res.data || [], period, hours || 24 * 365));
-      })
-      .catch(() => setChartData([]));
-    const interval = setInterval(() => {
-      fetchUsage(hours, period === "all" ? "all" : undefined)
-        .then((res: { data: Array<{ hour: string; provider?: string; model?: string; tokens?: number }> }) => {
-          setChartData(rowsToModelChart(res.data || [], period, hours || 24 * 365));
-        })
-        .catch(() => setChartData([]));
-    }, 5000);
-    return () => clearInterval(interval);
+      } catch {
+        setChartData([]);
+      }
+    }, 5000, controller.signal);
+    return () => controller.abort();
   }, [period]);
 
   return (

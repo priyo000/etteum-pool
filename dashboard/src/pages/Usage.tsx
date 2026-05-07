@@ -1,6 +1,6 @@
 import TokenUsage from "@/components/dashboard/TokenUsage";
 import { useEffect, useState } from "react";
-import { fetchDashboardStats, fetchModelUsage } from "@/lib/api";
+import { fetchDashboardStats, fetchModelUsage, runPollingLoop } from "@/lib/api";
 import { modelColor } from "@/lib/utils";
 
 export default function Usage() {
@@ -8,14 +8,16 @@ export default function Usage() {
   const [modelStats, setModelStats] = useState<any[]>([]);
 
   async function load() {
-    fetchDashboardStats().then(setStats).catch(() => setStats(null));
-    fetchModelUsage().then((res: { data: any[] }) => setModelStats(res.data || [])).catch(() => setModelStats([]));
+    await Promise.all([
+      fetchDashboardStats().then(setStats).catch(() => setStats(null)),
+      fetchModelUsage().then((res: { data: any[] }) => setModelStats(res.data || [])).catch(() => setModelStats([])),
+    ]);
   }
 
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+    runPollingLoop(load, 5000, controller.signal);
+    return () => controller.abort();
   }, []);
 
   const tokenStats = {
