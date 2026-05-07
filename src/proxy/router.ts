@@ -126,14 +126,14 @@ export async function routeRequest(
           }
           await pool.updateTokens(account.id, parsedTokens);
           // Retry with same account after refresh
+          pool.trackRequestStart(account.id);
+          tracked = true;
           const retryResult = stream
             ? await provider.chatCompletionStream(account, request)
             : await provider.chatCompletion(account, request);
 
           if (retryResult.success) {
             await pool.markUsed(account.id);
-            pool.trackRequestStart(account.id);
-            tracked = true;
             return {
               result: retryResult,
               account,
@@ -141,6 +141,8 @@ export async function routeRequest(
               durationMs: Date.now() - startTime,
             };
           }
+          pool.trackRequestEnd(account.id);
+          tracked = false;
         }
         await pool.markTransientFailure(account.id, result.error || "Auth failed");
         lastError = result.error || "Auth failed";

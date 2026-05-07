@@ -30,6 +30,7 @@ class LoginQueue {
   private totalFailed = 0;
   private activeAccountIds = new Set<number>();
   private retryTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private clearGeneration = 0;
 
   /**
    * Add an account to the login queue
@@ -150,6 +151,7 @@ class LoginQueue {
    */
   clear(): void {
     this.queue = [];
+    this.clearGeneration++;
     for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.retryTimers.clear();
     if (this.activeJobs === 0) this.processing = false;
@@ -237,8 +239,10 @@ class LoginQueue {
     } else {
       if (item.retries < this.maxRetries) {
         // Re-queue with incremented retry count and delay
+        const retryGeneration = this.clearGeneration;
         const timer = setTimeout(() => {
           this.retryTimers.delete(item.accountId);
+          if (retryGeneration !== this.clearGeneration) return;
           if (this.queue.some((queued) => queued.accountId === item.accountId) || this.activeAccountIds.has(item.accountId)) {
             if (this.activeJobs === 0 && this.queue.length === 0 && this.retryTimers.size === 0) this.processing = false;
             this.process();
@@ -247,7 +251,7 @@ class LoginQueue {
           this.queue.push({ accountId: item.accountId, retries: item.retries + 1, headless: item.headless });
           this.process();
         }, Math.min(2000 * Math.pow(2, item.retries), 15000)); // exponential backoff
-        this.retryTimers.set(item.accountId, timer);
+        if (retryGeneration === this.clearGeneration) this.retryTimers.set(item.accountId, timer);
       } else {
         this.totalFailed++;
       }
