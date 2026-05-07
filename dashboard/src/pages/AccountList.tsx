@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Search, Trash2, RefreshCw, RotateCcw } from "lucide-react";
 import { formatDateTimeID } from "@/lib/utils";
+import { useTimedMessage } from "@/hooks/useTimedMessage";
 import {
   deleteAccount,
   fetchAccounts,
@@ -58,7 +59,7 @@ export default function AccountList() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
+  const { message, setMessage: setTimedMessage, clearMessage } = useTimedMessage<string>(null, 4000);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -75,8 +76,8 @@ export default function AccountList() {
 
   useEffect(() => { load(); }, [provider]);
 
-  function showSuccess(text: string) { setMessage(text); setError(null); setTimeout(() => setMessage(null), 4000); }
-  function showError(err: unknown) { setError(err instanceof Error ? err.message : String(err)); setMessage(null); }
+  function showSuccess(text: string) { setTimedMessage(text); setError(null); }
+  function showError(err: unknown) { setError(err instanceof Error ? err.message : String(err)); clearMessage(); }
 
   async function handleWarmup(id: number) {
     try { await warmupAccount(id); showSuccess(`WarmUp queued #${id}`); await load(); } catch (err) { showError(err); }

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Cpu, Brain, Sparkles, Image, Copy, Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchModels } from "@/lib/api";
+import { useTimedMessage } from "@/hooks/useTimedMessage";
 
 interface ModelData {
   id: string;
@@ -43,7 +44,7 @@ export default function Models() {
   const [models, setModels] = useState<ModelData[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
-  const [copiedModel, setCopiedModel] = useState<string | null>(null);
+  const { message: copiedModel, setMessage: setCopiedModel } = useTimedMessage<string>(null, 1500);
 
   useEffect(() => {
     fetchModels()
@@ -60,7 +61,6 @@ export default function Models() {
   async function copyModelId(modelId: string) {
     await navigator.clipboard.writeText(modelId);
     setCopiedModel(modelId);
-    setTimeout(() => setCopiedModel((current) => current === modelId ? null : current), 1500);
   }
 
   // Group by provider

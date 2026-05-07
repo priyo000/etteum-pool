@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Save, RefreshCw } from "lucide-react";
 import { fetchSettings, updateSettings } from "@/lib/api";
+import { useTimedMessage } from "@/hooks/useTimedMessage";
 
 export default function Settings() {
   const [form, setForm] = useState<Record<string, string>>({
@@ -17,7 +18,7 @@ export default function Settings() {
     provider_codebuddy_enabled: "true",
     provider_canva_enabled: "true",
   });
-  const [message, setMessage] = useState<string | null>(null);
+  const { message, setMessage } = useTimedMessage<string>(null, 3000);
 
   async function load() {
     const res = await fetchSettings() as { data: Record<string, string> };
@@ -35,7 +36,6 @@ export default function Settings() {
   async function save() {
     await updateSettings(form);
     setMessage("Settings saved to PostgreSQL.");
-    setTimeout(() => setMessage(null), 3000);
   }
 
   return (

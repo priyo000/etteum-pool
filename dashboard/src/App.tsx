@@ -1,29 +1,37 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/layout/Layout";
-import Dashboard from "./pages/Dashboard";
-import Accounts from "./pages/Accounts";
-import AccountList from "./pages/AccountList";
-import Models from "./pages/Models";
-import ApiKey from "./pages/ApiKey";
-import Requests from "./pages/Requests";
-import Usage from "./pages/Usage";
-import Settings from "./pages/Settings";
-import BotLogs from "./pages/BotLogs";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Accounts = lazy(() => import("./pages/Accounts"));
+const AccountList = lazy(() => import("./pages/AccountList"));
+const Models = lazy(() => import("./pages/Models"));
+const ApiKey = lazy(() => import("./pages/ApiKey"));
+const Requests = lazy(() => import("./pages/Requests"));
+const Usage = lazy(() => import("./pages/Usage"));
+const Settings = lazy(() => import("./pages/Settings"));
+const BotLogs = lazy(() => import("./pages/BotLogs"));
+
+function RouteFallback() {
+  return <div className="flex h-64 items-center justify-center text-sm text-[var(--muted-foreground)]">Loading...</div>;
+}
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/accounts" element={<Accounts />} />
-        <Route path="/accounts/:provider" element={<AccountList />} />
-        <Route path="/models" element={<Models />} />
-        <Route path="/api-key" element={<ApiKey />} />
-        <Route path="/requests" element={<Requests />} />
-        <Route path="/bot-logs" element={<BotLogs />} />
-        <Route path="/usage" element={<Usage />} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/accounts" element={<Accounts />} />
+          <Route path="/accounts/:provider" element={<AccountList />} />
+          <Route path="/models" element={<Models />} />
+          <Route path="/api-key" element={<ApiKey />} />
+          <Route path="/requests" element={<Requests />} />
+          <Route path="/bot-logs" element={<BotLogs />} />
+          <Route path="/usage" element={<Usage />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }

@@ -4,25 +4,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Copy, Eye, EyeOff, RefreshCw, Check, Save, ShieldCheck } from "lucide-react";
 import { fetchApiKey, regenerateApiKey, setApiKey, testApiKey } from "@/lib/api";
+import { useTimedMessage } from "@/hooks/useTimedMessage";
 
 export default function ApiKey() {
   const [apiKey, setApiKeyState] = useState(localStorage.getItem("api_key") || "pool-proxy-secret-key");
   const [source, setSource] = useState("browser");
   const [showKey, setShowKey] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { message, setMessage: setTimedMessage, clearMessage } = useTimedMessage<string>(null, 3500);
+  const { message: copied, setMessage: setCopiedTimed } = useTimedMessage<boolean>(null, 2000);
   const [error, setError] = useState<string | null>(null);
   const [valid, setValid] = useState<boolean | null>(null);
 
   function notify(text: string) {
-    setMessage(text);
+    setTimedMessage(text);
     setError(null);
-    setTimeout(() => setMessage(null), 3500);
   }
 
   function fail(err: unknown) {
     setError(err instanceof Error ? err.message : String(err));
-    setMessage(null);
+    clearMessage();
   }
 
   function saveToBrowser(key = apiKey) {
@@ -48,8 +48,7 @@ export default function ApiKey() {
 
   const handleCopy = () => {
     navigator.clipboard.writeText(apiKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedTimed(true);
   };
 
   async function handleSave() {
