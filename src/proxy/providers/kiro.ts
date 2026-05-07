@@ -37,16 +37,15 @@ export class KiroProvider extends BaseProvider {
     // then scale by multiplier. This is an approximation since Kiro doesn't bill per-token.
 
     // Auto (1.0x baseline) — ~0.008/1K
-    // Vision: Kiro API supports it but exact payload format TBD (needs native IDE traffic capture)
-    { id: "auto", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: false, creditUnit: "token", creditRate: 0.008 / 1000, creditSource: "estimated" },
+    { id: "auto", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.008 / 1000, creditSource: "estimated" },
     // Claude Haiku 4.5 (0.4x) — ~0.003/1K
-    { id: "claude-haiku-4.5", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: false, creditUnit: "token", creditRate: 0.003 / 1000, creditSource: "estimated" },
+    { id: "claude-haiku-4.5", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.003 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4 (1.3x) — ~0.010/1K
-    { id: "claude-sonnet-4", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: false, creditUnit: "token", creditRate: 0.010 / 1000, creditSource: "estimated" },
+    { id: "claude-sonnet-4", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.010 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4.5 (1.3x) — ~0.010/1K
-    { id: "claude-sonnet-4.5", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: false, creditUnit: "token", creditRate: 0.010 / 1000, creditSource: "estimated" },
+    { id: "claude-sonnet-4.5", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.010 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4.5 Thinking (1.3x with extended thinking) — ~0.013/1K
-    { id: "claude-sonnet-4.5-thinking", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: false, creditUnit: "token", creditRate: 0.013 / 1000, creditSource: "estimated" },
+    { id: "claude-sonnet-4.5-thinking", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.013 / 1000, creditSource: "estimated" },
     // DeepSeek 3.2 (0.25x) — ~0.002/1K
     { id: "deepseek-3.2", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 164000, max_output: 64000, thinking: false, vision: false, creditUnit: "token", creditRate: 0.002 / 1000, creditSource: "estimated" },
     // GLM-5 (0.5x) — ~0.004/1K
@@ -603,10 +602,13 @@ export class KiroProvider extends BaseProvider {
       userInputMessageContext: context,
     };
 
-    // Kiro API: images in userInputMessage.images
-    // Disabled for now — Kiro API returns 400 "Improperly formed request"
-    // with all tested formats. Vision not yet working for Kiro provider.
-    // TODO: capture native Kiro IDE network traffic to determine exact format.
+    // Kiro API: images go in userInputMessage.imageInput
+    // Format: [{format: "png", source: {bytes: "<pure_base64>"}}]
+    if (imageBlocks.length > 0) {
+      userInputMessage.imageInput = imageBlocks;
+      // When images present, content must not be empty
+      if (!textContent) userInputMessage.content = "Describe this image.";
+    }
 
     const body: Record<string, unknown> = {
       conversationState: {
