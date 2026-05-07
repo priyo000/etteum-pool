@@ -20,9 +20,7 @@ export function isContentModerationError(error?: string): boolean {
     error.includes("敏感内容") ||
     error.includes("sensitive content") ||
     error.includes("系统检测到") ||
-    error.includes("content moderation") ||
-    error.includes("违规") ||
-    error.includes("抱歉")
+    error.includes("content moderation")
   );
 }
 
@@ -30,7 +28,8 @@ export function isNonAccountRequestError(error?: string): boolean {
   if (!error) return false;
   return (
     isInvalidModelError(error) ||
-    isContentModerationError(error) ||
+    // Content moderation is NOT included here — allow retry with other accounts
+    // because false positives are common and different accounts may succeed.
     isBadUpstreamRequest(error)
   );
 }

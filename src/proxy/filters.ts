@@ -45,10 +45,10 @@ export const PUDIDIL_FILTERS: FilterRule[] = [
     is_regex: true,
   },
   {
-    id: "remove_anthropic_billing_header_fallback",
-    pattern: "x-anthropic-billing-header",
+    id: "remove_github_issues_link",
+    pattern: "",
     replacement: "",
-    is_active: true,
+    is_active: false,
     is_regex: false,
   },
   // Remove Claude Code identity sections
@@ -120,9 +120,9 @@ export const PUDIDIL_FILTERS: FilterRule[] = [
   // Generic patterns last
   {
     id: "remove_cli_entrypoint",
-    pattern: "cc_entrypoint=cli",
+    pattern: "",
     replacement: "",
-    is_active: true,
+    is_active: false,
     is_regex: false,
   },
 ];
@@ -145,6 +145,8 @@ export function applyPudidilFilters(content: string): string {
       }
     } else {
       // Simple string replacement (case-sensitive for exact matches)
+      // Skip empty patterns to avoid infinite loops
+      if (!rule.pattern) continue;
       // Use global replace to remove all occurrences
       while (filtered.includes(rule.pattern)) {
         filtered = filtered.replace(rule.pattern, rule.replacement);

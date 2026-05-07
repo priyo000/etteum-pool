@@ -34,7 +34,8 @@ describe("proxy error classification", () => {
   test("groups client-side errors that should not poison accounts", () => {
     expect(isNonAccountRequestError("invalid model")).toBe(true);
     expect(isNonAccountRequestError("improperly formed request")).toBe(true);
-    expect(isNonAccountRequestError("content moderation")).toBe(true);
+    // Content moderation is retryable — different accounts may succeed
+    expect(isNonAccountRequestError("content moderation")).toBe(false);
     expect(isNonAccountRequestError("401 unauthorized")).toBe(false);
   });
 });
