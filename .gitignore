@@ -1,6 +1,11 @@
 # dependencies (bun install)
 node_modules
 
+# python venv
+.venv/
+__pycache__/
+*.pyc
+
 # output
 out
 dist

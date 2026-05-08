@@ -1,3 +1,7 @@
+import path from "path";
+
+const projectRoot = path.resolve(import.meta.dir, "..");
+
 export const config = {
   port: Number(process.env.PORT) || 1630,
   dashboardPort: Number(process.env.DASHBOARD_PORT) || 1631,
@@ -5,10 +9,13 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || "postgres://localhost:5432/pool_proxy",
   authScriptPath:
     process.env.AUTH_SCRIPT_PATH ||
-    "/home/priyo/.local/lib/enowxai/auth/login.py",
+    path.join(projectRoot, "scripts/auth/login.py"),
   pythonPath:
     process.env.PYTHON_PATH ||
-    "/home/priyo/.local/lib/enowxai/auth/.venv/bin/python",
+    path.join(projectRoot, "scripts/auth/.venv/bin/python"),
+  authScriptCwd:
+    process.env.AUTH_SCRIPT_CWD ||
+    path.join(projectRoot, "scripts/auth"),
   proxyUrl: process.env.PROXY_URL || "",
   encryptionKey:
     process.env.ENCRYPTION_KEY || "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",

@@ -309,7 +309,7 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
           BATCHER_CONCURRENT: "1",
           BATCHER_PRIORITY: provider,
         },
-        cwd: "/home/priyo/.local/lib/enowxai/auth",
+        cwd: config.authScriptCwd,
       }
     );
 
@@ -528,7 +528,7 @@ export async function loginAllProviders(
           HTTPS_PROXY: config.proxyUrl || "",
           BATCHER_CONCURRENT: "3",
         },
-        cwd: "/home/priyo/.local/lib/enowxai/auth",
+        cwd: config.authScriptCwd,
       }
     );
 
