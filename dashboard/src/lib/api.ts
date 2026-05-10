@@ -1,10 +1,11 @@
-export const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:${import.meta.env.VITE_BACKEND_PORT || "1730"}`;
+export const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:${import.meta.env.VITE_BACKEND_PORT || (Number(window.location.port) - 1) || "1630"}`;
 
 export function getWsBase(): string {
   const configured = import.meta.env.VITE_WS_BASE;
   if (configured) return configured;
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${protocol}://${window.location.hostname}:${import.meta.env.VITE_BACKEND_PORT || "1730"}`;
+  const backendPort = import.meta.env.VITE_BACKEND_PORT || (Number(window.location.port) - 1) || "1630";
+  return `${protocol}://${window.location.hostname}:${backendPort}`;
 }
 
 function getApiKey(): string {

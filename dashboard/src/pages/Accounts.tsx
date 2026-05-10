@@ -25,7 +25,7 @@ import {
   warmupAllAccounts,
 } from "@/lib/api";
 
-type Provider = "kiro" | "codebuddy" | "canva";
+type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "zai" | "moclaw";
 
 interface Account {
   id: number;
@@ -36,10 +36,14 @@ interface Account {
   quotaRemaining?: number;
 }
 
-const providers: Provider[] = ["kiro", "codebuddy", "canva"];
+const providers: Provider[] = ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "moclaw"];
 
 function labelProvider(provider: string) {
-  return provider === "codebuddy" ? "CodeBuddy" : provider.charAt(0).toUpperCase() + provider.slice(1);
+  if (provider === "kiro-pro") return "Kiro Pro";
+  if (provider === "codebuddy") return "CodeBuddy";
+  if (provider === "zai") return "Z.ai";
+  if (provider === "moclaw") return "Moclaw";
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
 export default function Accounts() {
@@ -53,7 +57,7 @@ export default function Accounts() {
 
   const [addForm, setAddForm] = useState({ email: "", password: "", provider: "kiro" as Provider });
   const [bulkText, setBulkText] = useState("");
-  const [bulkProviders, setBulkProviders] = useState<Provider[]>(["kiro", "codebuddy", "canva"]);
+  const [bulkProviders, setBulkProviders] = useState<Provider[]>(["kiro", "kiro-pro", "codebuddy", "canva", "zai", "moclaw"]);
   const [bulkHeadless, setBulkHeadless] = useState(true);
   const [bulkConcurrency, setBulkConcurrency] = useState(2);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

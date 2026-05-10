@@ -27,8 +27,11 @@ export const config = {
   authProcessTimeoutMs: Number(process.env.POOLPROX_AUTH_PROCESS_TIMEOUT_MS) || 10 * 60 * 1000,
   providerRequestTimeoutMs: Number(process.env.POOLPROX_PROVIDER_REQUEST_TIMEOUT_MS) || 120_000,
   providerQuotaTimeoutMs: Number(process.env.POOLPROX_PROVIDER_QUOTA_TIMEOUT_MS) || 15_000,
-  // Providers: kiro, codebuddy, canva
-  providers: ["kiro", "codebuddy", "canva"] as const,
+  // Windsurf API (dwgx/WindsurfAPI) settings
+  windsurfApiPort: Number(process.env.WINDSURF_API_PORT) || 3003,
+  windsurfApiKey: process.env.WINDSURF_API_KEY || "poolprox2-windsurf-internal",
+  // Providers: kiro, kiro-pro, codebuddy, canva, zai, windsurf, moclaw
+  providers: ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"] as const,
 } as const;
 
 export type Config = typeof config;

@@ -87,7 +87,7 @@ class LoginQueue {
 
     for (const item of items) {
       for (const provider of item.providers) {
-        if (!["kiro", "codebuddy", "canva"].includes(provider)) continue;
+        if (!["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"].includes(provider)) continue;
 
         try {
           const [newAccount] = await db
@@ -127,7 +127,7 @@ class LoginQueue {
   ): Promise<{ created: number; queued: number }> {
     const items: BulkAddItem[] = credentials.map((c) => ({
       ...c,
-      providers: ["kiro", "codebuddy", "canva"],
+      providers: ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"],
     }));
     return this.bulkAdd(items);
   }

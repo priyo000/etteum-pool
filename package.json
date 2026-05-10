@@ -1,31 +1,13 @@
 {
-  "name": "pool-proxy",
-  "module": "src/index.ts",
+  "name": "poolprox2",
+  "version": "1.0.0",
   "type": "module",
-  "private": true,
-  "scripts": {
-    "backend": "bun src/index.ts",
-    "dashboard": "cd dashboard && bunx vite --host 0.0.0.0 --port ${DASHBOARD_PORT:-1731}",
-    "dev": "bun run scripts/start.ts",
-    "start": "bun run scripts/start.ts",
-    "production": "bun run scripts/production.ts",
-    "production:skip": "bun run scripts/production.ts --skip-build",
-    "test": "bun test",
-    "db:generate": "bunx drizzle-kit generate",
-    "db:migrate": "bunx drizzle-kit migrate",
-    "db:push": "bunx drizzle-kit push",
-    "db:studio": "bunx drizzle-kit studio"
+  "scripts": {},
+  "dependencies": {
+    "playwright": "^1.40.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "drizzle-kit": "^0.31.10"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.17",
-    "postgres": "^3.4.9"
+    "bun-types": "latest"
   }
 }

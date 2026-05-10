@@ -1,11 +1,11 @@
 import { db } from "../db/index";
-import { accounts } from "../db/schema";
+import { accounts, settings } from "../db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import type { Account } from "../db/schema";
 import { broadcast } from "../ws/index";
 import { config } from "../config";
 
-export type ProviderName = "kiro" | "codebuddy" | "canva";
+export type ProviderName = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "zai" | "windsurf" | "moclaw";
 
 interface PoolState {
   lastIndex: Map<ProviderName, number>;
@@ -24,6 +24,7 @@ class AccountPool {
 
   private activeAccountsCache = new Map<ProviderName, ActiveAccountsCacheEntry>();
   private inFlightByAccountId = new Map<number, number>();
+  private lbMethodCache: { value: string; expiresAt: number } | null = null;
 
   /**
    * Clear cached active accounts after account mutations or status changes.
@@ -37,9 +38,21 @@ class AccountPool {
     this.activeAccountsCache.clear();
   }
 
+  private async getLoadBalancingMethod(): Promise<string> {
+    const now = Date.now();
+    if (this.lbMethodCache && this.lbMethodCache.expiresAt > now) return this.lbMethodCache.value;
+    try {
+      const [row] = await db.select().from(settings).where(eq(settings.key, "load_balancing_method")).limit(1);
+      const value = row?.value || "round_robin";
+      this.lbMethodCache = { value, expiresAt: now + 10000 };
+      return value;
+    } catch {
+      return "round_robin";
+    }
+  }
+
   /**
-   * Get the next available account for a provider using round-robin.
-   * Skips exhausted/error accounts.
+   * Get the next available account for a provider using configured method.
    */
   async getNextAccount(provider: ProviderName): Promise<Account | null> {
     const activeAccounts = await this.getActiveAccounts(provider);
@@ -48,6 +61,17 @@ class AccountPool {
       return null;
     }
 
+    const method = await this.getLoadBalancingMethod();
+
+    if (method === "sequential") {
+      // Sequential: use first account with lowest in-flight, prefer order
+      for (const account of activeAccounts) {
+        if (this.getInFlightCount(account.id) === 0) return account;
+      }
+      return activeAccounts[0] || null;
+    }
+
+    // Round Robin (default)
     const startIdx = ((this.state.lastIndex.get(provider) || 0) + 1) % activeAccounts.length;
     let selected = activeAccounts[startIdx];
     let selectedIdx = startIdx;
@@ -176,11 +200,26 @@ class AccountPool {
   getProviderForModel(model: string): ProviderName | null {
     const m = model.toLowerCase().replace("-thinking", "");
 
+    // === WINDSURF ===
+    if (m.startsWith("ws-")) return "windsurf";
+
+    // === Z.AI ===
+    if (m.startsWith("zai-")) return "zai";
+
     // === CANVA ===
     if (m.includes("canva")) return "canva";
 
+    // === MOCLAW ===
+    if (m.includes("moclaw") || m === "mo-auto") return "moclaw";
+
+    // === KIRO PRO (Opus models) ===
+    if (m.startsWith("kp-")) return "kiro-pro";
+    if (m === "claude-opus-4.7") return "kiro-pro";
+    if (m === "claude-opus-4.6") return "kiro-pro";
+    if (m === "claude-opus-4.5") return "kiro-pro";
+
     // === CODEBUDDY (MAX tier) ===
-    if (m === "claude-opus-4.6") return "codebuddy";
+    if (m.startsWith("cb-")) return "codebuddy";
     if (m.startsWith("gpt-5")) return "codebuddy";
     if (m.startsWith("gemini-")) return "codebuddy";
     if (m === "deepseek-v3-2-volc") return "codebuddy";

@@ -13,6 +13,9 @@ from app.providers.codebuddy import CodeBuddyProviderAdapter
 from app.providers.wavespeed import WavespeedProviderAdapter
 from app.providers.canva import CanvaProviderAdapter
 from app.providers.yepapi import YepAPIAdapter
+from app.providers.zai import ZaiProviderAdapter
+from app.providers.windsurf import WindsurfProviderAdapter
+from app.providers.moclaw import MoclawProviderAdapter
 from app.providers.base import NormalizedAccount
 from app.errors.exceptions import BatcherError, RetryableBatcherError
 
@@ -289,17 +292,20 @@ async def main(email: str, password: str):
             "kiro": (KiroProviderAdapter(), NormalizedAccount(provider="kiro", identifier=email, secret=password)),
             "codebuddy": (CodeBuddyProviderAdapter(), NormalizedAccount(provider="codebuddy", identifier=email, secret=password)),
             "canva": (CanvaProviderAdapter(), NormalizedAccount(provider="canva", identifier=email, secret=password)),
+            "zai": (ZaiProviderAdapter(), NormalizedAccount(provider="zai", identifier=email, secret=password)),
+            "windsurf": (WindsurfProviderAdapter(), NormalizedAccount(provider="windsurf", identifier=email, secret=password)),
+            "moclaw": (MoclawProviderAdapter(), NormalizedAccount(provider="moclaw", identifier=email, secret=password)),
         }
         tasks = []
         task_names = []
-        for name in ["kiro", "codebuddy", "canva"]:
+        for name in ["kiro", "codebuddy", "canva", "zai", "windsurf", "moclaw"]:
             if name in allowed_providers:
                 adapter, account = provider_specs[name]
                 tasks.append(run_provider(adapter, account))
                 task_names.append(name)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         result = {"type": "result"}
-        for name in ["kiro", "codebuddy", "wavespeed", "canva", "yepapi"]:
+        for name in ["kiro", "codebuddy", "wavespeed", "canva", "yepapi", "zai", "windsurf", "moclaw"]:
             result[name] = {"success": False, "provider": name, "error": "skipped"}
         for name, provider_result in zip(task_names, results):
             if isinstance(provider_result, BaseException):

@@ -145,7 +145,7 @@ export default function Requests() {
                     <td className="p-4 text-sm text-[var(--foreground)]">{labelProvider(req.provider)}</td>
                     <td className="p-4 text-sm text-[var(--foreground)]">{req.model || "-"}</td>
                     <td className="p-4"><Badge variant={getStatusColor(req.status)}>{req.status}</Badge></td>
-                    <td className="p-4 text-sm text-[var(--muted-foreground)]">{req.durationMs ?? 0}ms</td>
+                    <td className="p-4 text-sm text-[var(--muted-foreground)]">{((req.durationMs ?? 0) / 1000).toFixed(1)}s</td>
                     <td className="p-4 text-xs text-[var(--muted-foreground)]">{req.totalTokens || 0}</td>
                     <td className="p-4 text-xs text-[var(--muted-foreground)]">{Number(req.creditsUsed || 0).toFixed(2)}</td>
                     <td className="p-4 text-xs text-[var(--muted-foreground)]">{req.accountEmail || (req.accountId ? `#${req.accountId}` : "-")}</td>
@@ -186,7 +186,7 @@ export default function Requests() {
             <div className="mt-4 flex items-center gap-2 text-xs">
               <Badge variant={getStatusColor(selected.status)}>{selected.status}</Badge>
               <span className="text-[var(--muted-foreground)]">HTTP {selected.status === "success" ? 200 : 503}</span>
-              <span className="text-[var(--muted-foreground)]">{selected.durationMs || 0}ms</span>
+              <span className="text-[var(--muted-foreground)]">{((selected.durationMs || 0) / 1000).toFixed(1)}s</span>
               <span className="text-[var(--muted-foreground)]">{labelProvider(selected.provider)}</span>
             </div>
 

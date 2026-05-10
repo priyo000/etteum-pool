@@ -114,6 +114,7 @@ export interface ProviderResult {
   creditSource?: CreditSource;
   error?: string;
   quotaExhausted?: boolean;
+  tokens?: unknown; // New tokens after refresh (if refreshed during request)
 }
 
 export abstract class BaseProvider {

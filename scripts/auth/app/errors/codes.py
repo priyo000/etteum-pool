@@ -30,6 +30,11 @@ class ErrorCode(str, Enum):
     browser_challenge_blocked = "BROWSER_CHALLENGE_BLOCKED"
     browser_unexpected_state = "BROWSER_UNEXPECTED_STATE"
 
+    # Auth Flow
+    auth_timeout = "AUTH_TIMEOUT"
+    auth_session_expired = "AUTH_SESSION_EXPIRED"
+    auth_token_extraction_failed = "AUTH_TOKEN_EXTRACTION_FAILED"
+
     # Provider Business
     provider_quota_fetch_failed = "PROVIDER_QUOTA_FETCH_FAILED"
     provider_token_exchange_failed = "PROVIDER_TOKEN_EXCHANGE_FAILED"

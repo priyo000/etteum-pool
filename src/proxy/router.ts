@@ -1,19 +1,31 @@
 import type { ChatCompletionRequest, ProviderResult } from "./providers/base";
 import { KiroProvider } from "./providers/kiro";
+import { KiroProProvider } from "./providers/kiro-pro";
 import { CodeBuddyProvider } from "./providers/codebuddy";
 import { CanvaProvider } from "./providers/canva";
+import { ZaiProvider } from "./providers/zai";
+import { WindsurfProvider } from "./providers/windsurf";
+import { MoclawProvider } from "./providers/moclaw";
 import { isNonAccountRequestError } from "./errors";
 import { pool } from "./pool";
 import type { Account } from "../db/schema";
 
 const kiroProvider = new KiroProvider();
+const kiroProProvider = new KiroProProvider();
 const codebuddyProvider = new CodeBuddyProvider();
 const canvaProvider = new CanvaProvider();
+const zaiProvider = new ZaiProvider();
+const windsurfProvider = new WindsurfProvider();
+const moclawProvider = new MoclawProvider();
 
 const providers = {
   kiro: kiroProvider,
+  "kiro-pro": kiroProProvider,
   codebuddy: codebuddyProvider,
   canva: canvaProvider,
+  zai: zaiProvider,
+  windsurf: windsurfProvider,
+  moclaw: moclawProvider,
 } as const;
 
 type ProviderName = keyof typeof providers;
@@ -89,6 +101,10 @@ export async function routeRequest(
       const durationMs = Date.now() - startTime;
 
       if (result.success) {
+        // If provider refreshed tokens internally, persist them to database
+        if (result.tokens) {
+          await pool.updateTokens(account.id, result.tokens);
+        }
         await pool.markUsed(account.id);
         return { result, account, provider: providerName, durationMs };
       }
@@ -182,8 +198,12 @@ export async function routeRequest(
 export function getAllModels() {
   return [
     ...kiroProvider.getModels(),
+    ...kiroProProvider.getModels(),
     ...codebuddyProvider.getModels(),
     ...canvaProvider.getModels(),
+    ...zaiProvider.getModels(),
+    ...windsurfProvider.getModels(),
+    ...moclawProvider.getModels(),
   ];
 }
 

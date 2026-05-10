@@ -248,7 +248,7 @@ function extractResult(events: ScriptEvent[]): ScriptResultEvent | null {
  *   --email <email> --password <password>
  *
  * And uses env vars:
- *   ENOWX_ALLOWED_PROVIDERS=kiro,codebuddy,canva (comma-separated)
+ *   ENOWX_ALLOWED_PROVIDERS=kiro,codebuddy,canva,zai (comma-separated)
  *   BATCHER_ENABLE_CAMOUFOX=true (for browser automation)
  *   BATCHER_CAMOUFOX_HEADLESS=true
  *   BATCHER_PROXY_URL=<proxy>
@@ -256,7 +256,7 @@ function extractResult(events: ScriptEvent[]): ScriptResultEvent | null {
  */
 export async function loginAccount(account: Account, options: LoginOptions = {}): Promise<LoginResult> {
   const password = decrypt(account.password);
-  const provider = account.provider; // kiro | codebuddy | canva
+  const provider = account.provider; // kiro | codebuddy | canva | zai
   const headless = options.headless ?? config.headless;
 
   try {
@@ -295,7 +295,8 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
         env: {
           ...process.env,
           // Only login the specific provider we need
-          ENOWX_ALLOWED_PROVIDERS: provider,
+          // kiro-pro uses same bot as kiro
+          ENOWX_ALLOWED_PROVIDERS: provider === "kiro-pro" ? "kiro" : provider,
           // Ensure Python progress JSON is flushed line-by-line for live dashboard logs
           PYTHONUNBUFFERED: "1",
           // Enable camoufox browser automation
@@ -392,7 +393,9 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
     }
 
     // Get the specific provider's result
-    const providerResult = result[provider] as ProviderResult | undefined;
+    // kiro-pro uses same bot as kiro, so look up "kiro" result
+    const resultKey = provider === "kiro-pro" ? "kiro" : provider;
+    const providerResult = result[resultKey] as ProviderResult | undefined;
     if (!providerResult) {
       const errorMsg = `Provider ${provider} not found in result`;
       await markAccountError(account.id, errorMsg);
@@ -499,7 +502,7 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
 /**
  * Run login for ALL providers at once for a given email/password.
  * This is more efficient when adding a new account that should be
- * registered across all 3 providers (Kiro, CodeBuddy, Canva).
+ * registered across all providers (Kiro, CodeBuddy, Canva, Z.ai, Windsurf).
  */
 export async function loginAllProviders(
   email: string,
@@ -520,13 +523,13 @@ export async function loginAllProviders(
         stderr: "pipe",
         env: {
           ...process.env,
-          ENOWX_ALLOWED_PROVIDERS: "kiro,codebuddy,canva",
+          ENOWX_ALLOWED_PROVIDERS: "kiro,codebuddy,canva,zai,windsurf,moclaw",
           BATCHER_ENABLE_CAMOUFOX: "true",
           BATCHER_CAMOUFOX_HEADLESS: config.headless ? "true" : "false",
           BATCHER_PROXY_URL: config.proxyUrl || "",
           HTTP_PROXY: config.proxyUrl || "",
           HTTPS_PROXY: config.proxyUrl || "",
-          BATCHER_CONCURRENT: "3",
+          BATCHER_CONCURRENT: "5",
         },
         cwd: config.authScriptCwd,
       }
@@ -548,12 +551,15 @@ export async function loginAllProviders(
         kiro: { success: false, error },
         codebuddy: { success: false, error },
         canva: { success: false, error },
+        zai: { success: false, error },
+        windsurf: { success: false, error },
+        moclaw: { success: false, error },
       };
     }
 
     const output: Record<string, LoginResult> = {};
 
-    for (const provider of ["kiro", "codebuddy", "canva"] as const) {
+    for (const provider of ["kiro", "codebuddy", "canva", "zai", "windsurf", "moclaw"] as const) {
       const pr = result[provider] as ProviderResult | undefined;
       if (!pr || !pr.success) {
         output[provider] = {
@@ -576,6 +582,9 @@ export async function loginAllProviders(
       kiro: { success: false, error: errorMsg },
       codebuddy: { success: false, error: errorMsg },
       canva: { success: false, error: errorMsg },
+      zai: { success: false, error: errorMsg },
+      windsurf: { success: false, error: errorMsg },
+      moclaw: { success: false, error: errorMsg },
     };
   }
 }

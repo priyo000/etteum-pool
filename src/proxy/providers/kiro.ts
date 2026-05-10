@@ -45,6 +45,10 @@ export class KiroProvider extends BaseProvider {
     { id: "claude-sonnet-4.5", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.010 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4.5 Thinking (1.3x with extended thinking)
     { id: "claude-sonnet-4.5-thinking", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.013 / 1000, creditSource: "estimated" },
+    // Claude Sonnet 4.6 (1.5x)
+    { id: "claude-sonnet-4.6", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.012 / 1000, creditSource: "estimated" },
+    // Claude Sonnet 4.6 Thinking (1.5x with extended thinking)
+    { id: "claude-sonnet-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.015 / 1000, creditSource: "estimated" },
     // DeepSeek 3.2 (0.25x)
     { id: "deepseek-3.2", object: "model", created: Date.now(), owned_by: "kiro", tier: "standard", context_window: 164000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.002 / 1000, creditSource: "estimated" },
     // GLM-5 (0.5x)
@@ -242,7 +246,12 @@ export class KiroProvider extends BaseProvider {
           const errText = await retryResponse.text();
           return { success: false, error: `Kiro API error: ${errText}` };
         }
-        return this.parseResponse(retryResponse, request);
+        const result = await this.parseResponse(retryResponse, request);
+        // Return new tokens so router can persist them
+        if (result.success) {
+          result.tokens = newTokens;
+        }
+        return result;
       }
 
       if (response.status === 429) {
@@ -273,7 +282,24 @@ export class KiroProvider extends BaseProvider {
       const response = await this.makeRequest(tokens, request, true);
 
       if (response.status === 401 || response.status === 403) {
-        return { success: false, error: "Session expired" };
+        const refreshResult = await this.refreshToken(account);
+        if (!refreshResult.success) {
+          return { success: false, error: "Token expired and refresh failed" };
+        }
+        const newTokens = (typeof refreshResult.tokens === "string"
+          ? JSON.parse(refreshResult.tokens)
+          : refreshResult.tokens) as KiroTokens;
+        const retryResponse = await this.makeRequest(newTokens, request, true);
+        if (!retryResponse.ok) {
+          const errText = await retryResponse.text();
+          return { success: false, error: `Kiro API error: ${errText}` };
+        }
+        const result = this.createLiveStreamResponse(retryResponse, request.model);
+        // Return new tokens so router can persist them
+        if (result.success) {
+          result.tokens = newTokens;
+        }
+        return result;
       }
 
       if (response.status === 429) {

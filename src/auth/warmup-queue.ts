@@ -54,7 +54,7 @@ class WarmupQueue {
   }
 
   async queueAll(options: WarmupAllOptions = {}): Promise<number> {
-    const providers = options.providers?.length ? options.providers : ["kiro", "codebuddy"];
+    const providers = options.providers?.length ? options.providers : ["kiro", "kiro-pro", "codebuddy", "moclaw"];
     const statuses = options.statuses?.length
       ? options.statuses
       : options.includePending

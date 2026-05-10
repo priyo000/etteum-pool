@@ -7,8 +7,11 @@ import { modelColor } from "@/lib/utils";
 
 const providerMeta: Record<string, { name: string; color: string; bgColor: string }> = {
   kiro: { name: "Kiro", color: "#3b82f6", bgColor: "bg-blue-500/10" },
+  "kiro-pro": { name: "Kiro Pro", color: "#f59e0b", bgColor: "bg-amber-500/10" },
   codebuddy: { name: "CodeBuddy", color: "#8b5cf6", bgColor: "bg-purple-500/10" },
   canva: { name: "Canva", color: "#14b8a6", bgColor: "bg-teal-500/10" },
+  zai: { name: "Z.ai", color: "#ef4444", bgColor: "bg-red-500/10" },
+  moclaw: { name: "Moclaw", color: "#10b981", bgColor: "bg-emerald-500/10" },
 };
 
 const allowedProviders = new Set(Object.keys(providerMeta));

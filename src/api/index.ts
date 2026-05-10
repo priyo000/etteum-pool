@@ -12,7 +12,7 @@ apiRouter.route("/stats", statsRouter);
 apiRouter.route("/keys", keysRouter);
 
 apiRouter.get("/providers", (c) => {
-  return c.json({ data: ["kiro", "codebuddy", "canva"] });
+  return c.json({ data: ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "moclaw"] });
 });
 
 // Health check

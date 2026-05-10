@@ -62,7 +62,7 @@ export class CodeBuddyProvider extends BaseProvider {
     // 1 CodeBuddy credit ≈ $0.01 passthrough.
 
     // Claude Opus 4.6 — confirmed: 0.02674/1K
-    { id: "claude-opus-4.6", object: "model", created: Date.now(), owned_by: "codebuddy", tier: "max", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.027 / 1000, creditSource: "estimated" },
+    { id: "cb-opus-4.6", object: "model", created: Date.now(), owned_by: "codebuddy", tier: "max", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "token", creditRate: 0.027 / 1000, creditSource: "estimated" },
     // DeepSeek V3.2 — upstream ~$0.14/$0.28/M → ~0.002/1K
     { id: "deepseek-v3-2-volc", object: "model", created: Date.now(), owned_by: "codebuddy", tier: "max", thinking: false, vision: false, creditUnit: "token", creditRate: 0.002 / 1000, creditSource: "estimated" },
     // enowx-default — mid-tier estimate
@@ -661,9 +661,13 @@ export class CodeBuddyProvider extends BaseProvider {
     const body: Record<string, unknown> = {
       messages: cleanedMessages,
       model: actualModel,
-      max_tokens: Math.max(request.max_tokens || 64000, 128),
       stream,
     };
+
+    // Only add max_tokens if explicitly provided and reasonable
+    if (request.max_tokens && request.max_tokens > 0) {
+      body.max_tokens = Math.min(request.max_tokens, 32000);
+    }
 
     // Normalize and forward tools if provided
     if (request.tools && request.tools.length > 0) {

@@ -23,12 +23,13 @@ After=network.target postgresql.service
 [Service]
 Type=simple
 WorkingDirectory=/home/priyo/dev/OpenProject/poolprox2
-ExecStart=/home/priyo/.bun/bin/bun run production:skip
+ExecStart=/home/priyo/.bun/bin/bun scripts/production.ts --skip-build
 Restart=always
 RestartSec=3
 Environment=NODE_ENV=production
 Environment=PORT=1630
 Environment=DASHBOARD_PORT=1631
+Environment=PATH=/home/priyo/.bun/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=default.target

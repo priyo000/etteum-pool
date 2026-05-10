@@ -1,0 +1,28 @@
+{
+  "email": "CayayahRatajaya@ggmel.com",
+  "success": true,
+  "provider": "kiro",
+  "tokens": {
+    "access_token_length": 232,
+    "refresh_token_length": 232
+  },
+  "quota": {
+    "subscription_type": "",
+    "subscription_title": "",
+    "account_tier": "free",
+    "limit": 50.0,
+    "total_credits": 50.0,
+    "remaining": 50.0,
+    "remaining_credits": 50.0,
+    "subscription_credits": 50.0,
+    "bonus_credits": 0.0,
+    "usage_limit": 50.0,
+    "current_usage": 0.0,
+    "total_usage": 0.0,
+    "free_trial_status": "",
+    "free_trial_limit": 0.0,
+    "free_trial_usage": 0.0,
+    "days_until_reset": 0,
+    "next_reset_date": null
+  }
+}

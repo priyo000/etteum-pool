@@ -14,6 +14,7 @@ export default function Settings() {
     timeout_ms: "30000",
     rate_limit_per_minute: "60",
     log_level: "info",
+    load_balancing_method: "round_robin",
     provider_kiro_enabled: "true",
     provider_codebuddy_enabled: "true",
     provider_canva_enabled: "true",
@@ -90,6 +91,16 @@ export default function Settings() {
             <CardDescription>Only Kiro, CodeBuddy, and Canva are supported.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm text-[var(--foreground)]">Load Balancing Method</label>
+              <select value={form.load_balancing_method} onChange={(e) => setValue("load_balancing_method", e.target.value)} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
+                <option value="round_robin">Round Robin</option>
+                <option value="sequential">Sequential</option>
+              </select>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                {form.load_balancing_method === "sequential" ? "Uses accounts in order, moves to next only when current is exhausted." : "Distributes requests evenly across all active accounts."}
+              </p>
+            </div>
             {["kiro", "codebuddy", "canva"].map((provider) => {
               const key = `provider_${provider}_enabled`;
               const checked = form[key] !== "false";
@@ -97,7 +108,7 @@ export default function Settings() {
                 <div key={provider} className="flex items-center justify-between p-3 rounded-lg bg-[var(--secondary)]">
                   <div>
                     <p className="text-sm font-medium text-[var(--foreground)] capitalize">{provider === "codebuddy" ? "CodeBuddy" : provider}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Load balancing: Round Robin</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Load balancing: {form.load_balancing_method === "sequential" ? "Sequential" : "Round Robin"}</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" checked={checked} onChange={(e) => setValue(key, String(e.target.checked))} className="sr-only peer" />

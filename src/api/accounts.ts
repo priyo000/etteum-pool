@@ -54,7 +54,7 @@ accountsRouter.get("/:id", async (c) => {
  */
 accountsRouter.post("/", async (c) => {
   const body = await c.req.json<{
-    provider: "kiro" | "codebuddy" | "canva";
+    provider: "kiro" | "codebuddy" | "canva" | "zai" | "moclaw";
     email: string;
     password: string;
     tokens?: Record<string, unknown>;
@@ -112,7 +112,7 @@ accountsRouter.post("/", async (c) => {
 accountsRouter.post("/bulk", async (c) => {
   const body = await c.req.json<{
     accounts: Array<{
-      provider: "kiro" | "codebuddy" | "canva";
+      provider: "kiro" | "codebuddy" | "canva" | "zai" | "moclaw";
       email: string;
       password: string;
     }>;

@@ -52,3 +52,14 @@ drizzle/
 
 # Bun lockfile (optional - some prefer to commit this)
 # bun.lock
+
+# Debug artifacts
+*.png
+EOF
+poolprox
+
+# Playwright MCP runtime
+.playwright-mcp/
+
+# Nested git repos (external services)
+services/windsurf-api/

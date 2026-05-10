@@ -84,15 +84,15 @@ authRouter.post("/bulk-add", async (c) => {
     return c.json({ error: "accounts array is required" }, 400);
   }
 
-  const providers = body.providers || ["kiro", "codebuddy", "canva"];
+  const providers = body.providers || ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"];
 
   // Validate providers
   const validProviders = providers.filter((p) =>
-    ["kiro", "codebuddy", "canva"].includes(p)
+    ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"].includes(p)
   );
 
   if (validProviders.length === 0) {
-    return c.json({ error: "At least one valid provider is required (kiro, codebuddy, canva)" }, 400);
+    return c.json({ error: "At least one valid provider is required (kiro, codebuddy, canva, zai, windsurf)" }, 400);
   }
 
   const items = body.accounts.map((a) => ({
@@ -131,8 +131,8 @@ authRouter.post("/import", async (c) => {
     return c.json({ error: "text field is required" }, 400);
   }
 
-  const providers = (body.providers || ["kiro", "codebuddy", "canva"]).filter((p) =>
-    ["kiro", "codebuddy", "canva"].includes(p)
+  const providers = (body.providers || ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"]).filter((p) =>
+    ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"].includes(p)
   );
 
   const lines = body.text.trim().split("\n");
