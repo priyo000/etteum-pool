@@ -834,42 +834,48 @@ export class KiroProvider extends BaseProvider {
               const text = this.extractEventText(payload, eventType);
               if (text) enqueue({ content: text });
               const tool = payload?.toolUseEvent || (eventType === "toolUseEvent" ? payload : null);
-              if (tool?.toolUseId && tool?.name) {
-                if (!toolIndexes.has(tool.toolUseId)) toolIndexes.set(tool.toolUseId, nextToolIndex++);
-                const args = typeof tool.input === "string" ? tool.input : tool.input && Object.keys(tool.input).length > 0 ? JSON.stringify(tool.input) : "";
-                if (args) {
-                  toolBuffers.set(tool.toolUseId, (toolBuffers.get(tool.toolUseId) || "") + args);
-                  enqueue({
-                    tool_calls: [{
-                      index: toolIndexes.get(tool.toolUseId),
-                      id: tool.toolUseId,
-                      type: "function",
-                      function: { name: tool.name, arguments: args },
-                    }],
-                  });
-                }
-                if (tool.stop === true) {
-                  const buffered = toolBuffers.get(tool.toolUseId) || "";
-                  if (buffered && !this.isCompleteJson(buffered)) {
+              if (tool?.toolUseId && (tool?.name || toolIndexes.has(tool.toolUseId))) {
+                const isFirstChunk = !toolIndexes.has(tool.toolUseId);
+                if (isFirstChunk && !tool.name) {
+                  // Can't start a tool call without a name — skip
+                } else {
+                  if (isFirstChunk) toolIndexes.set(tool.toolUseId, nextToolIndex++);
+                  const toolIdx = toolIndexes.get(tool.toolUseId)!;
+                  const args = typeof tool.input === "string" ? tool.input : tool.input && Object.keys(tool.input).length > 0 ? JSON.stringify(tool.input) : "";
+                  if (isFirstChunk) {
+                    // First chunk: include id, type, and function name
+                    toolBuffers.set(tool.toolUseId, args);
                     enqueue({
                       tool_calls: [{
-                        index: toolIndexes.get(tool.toolUseId),
+                        index: toolIdx,
                         id: tool.toolUseId,
                         type: "function",
-                        function: { name: tool.name, arguments: this.completeJsonSuffix(buffered) },
-                        finish_reason: "tool_calls",
+                        function: { name: tool.name, arguments: args },
                       }],
                     });
-                  } else {
+                  } else if (args) {
+                    // Subsequent chunks: only index and arguments delta
+                    toolBuffers.set(tool.toolUseId, (toolBuffers.get(tool.toolUseId) || "") + args);
                     enqueue({
                       tool_calls: [{
-                        index: toolIndexes.get(tool.toolUseId),
-                        id: tool.toolUseId,
-                        type: "function",
-                        function: { name: tool.name, arguments: "" },
-                        finish_reason: "tool_calls",
+                        index: toolIdx,
+                        function: { arguments: args },
                       }],
                     });
+                  }
+                  if (tool.stop === true) {
+                    const buffered = toolBuffers.get(tool.toolUseId) || "";
+                    if (buffered && !this.isCompleteJson(buffered)) {
+                      const suffix = this.completeJsonSuffix(buffered);
+                      if (suffix) {
+                        enqueue({
+                          tool_calls: [{
+                            index: toolIdx,
+                            function: { arguments: suffix },
+                          }],
+                        });
+                      }
+                    }
                   }
                 }
               }
