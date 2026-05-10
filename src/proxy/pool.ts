@@ -24,7 +24,7 @@ class AccountPool {
 
   private activeAccountsCache = new Map<ProviderName, ActiveAccountsCacheEntry>();
   private inFlightByAccountId = new Map<number, number>();
-  private lbMethodCache: { value: string; expiresAt: number } | null = null;
+  private lbMethodCache: { global: string; perProvider: Map<ProviderName, string>; expiresAt: number } | null = null;
 
   /**
    * Clear cached active accounts after account mutations or status changes.
@@ -38,17 +38,32 @@ class AccountPool {
     this.activeAccountsCache.clear();
   }
 
-  private async getLoadBalancingMethod(): Promise<string> {
+  private async getLoadBalancingMethod(provider: ProviderName): Promise<string> {
     const now = Date.now();
-    if (this.lbMethodCache && this.lbMethodCache.expiresAt > now) return this.lbMethodCache.value;
-    try {
-      const [row] = await db.select().from(settings).where(eq(settings.key, "load_balancing_method")).limit(1);
-      const value = row?.value || "round_robin";
-      this.lbMethodCache = { value, expiresAt: now + 10000 };
-      return value;
-    } catch {
-      return "round_robin";
+    if (!this.lbMethodCache || this.lbMethodCache.expiresAt <= now) {
+      try {
+        const rows = await db.select().from(settings);
+        const perProvider = new Map<ProviderName, string>();
+        let global = "round_robin";
+        for (const row of rows) {
+          if (!row.value) continue;
+          if (row.key === "load_balancing_method") {
+            global = row.value;
+            continue;
+          }
+          const match = row.key.match(/^provider_(.+)_lb_method$/);
+          if (match && match[1]) perProvider.set(match[1] as ProviderName, row.value);
+        }
+        this.lbMethodCache = { global, perProvider, expiresAt: now + 10000 };
+      } catch {
+        this.lbMethodCache = { global: "round_robin", perProvider: new Map(), expiresAt: now + 10000 };
+      }
     }
+    return this.lbMethodCache.perProvider.get(provider) || this.lbMethodCache.global;
+  }
+
+  invalidateLoadBalancingCache(): void {
+    this.lbMethodCache = null;
   }
 
   /**
@@ -61,7 +76,7 @@ class AccountPool {
       return null;
     }
 
-    const method = await this.getLoadBalancingMethod();
+    const method = await this.getLoadBalancingMethod(provider);
 
     if (method === "sequential") {
       // Sequential: use first account with lowest in-flight, prefer order

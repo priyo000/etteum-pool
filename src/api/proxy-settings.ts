@@ -2,8 +2,17 @@ import { Hono } from "hono";
 import { db } from "../db/index";
 import { settings } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { config } from "../config";
+import { pool } from "../proxy/pool";
 
 export const proxySettingsRouter = new Hono();
+
+/**
+ * GET /api/settings/providers - List configured providers (source of truth: config.providers)
+ */
+proxySettingsRouter.get("/providers", async (c) => {
+  return c.json({ data: config.providers });
+});
 
 /**
  * GET /api/settings - Get all settings
@@ -60,6 +69,10 @@ proxySettingsRouter.put("/:key", async (c) => {
     await db.insert(settings).values({ key, value: body.value });
   }
 
+  if (key === "load_balancing_method" || /^provider_.+_lb_method$/.test(key)) {
+    pool.invalidateLoadBalancingCache();
+  }
+
   return c.json({ key, value: body.value });
 });
 
@@ -86,6 +99,7 @@ proxySettingsRouter.delete("/:key", async (c) => {
 proxySettingsRouter.put("/", async (c) => {
   const body = await c.req.json<Record<string, string>>();
 
+  let lbCacheTouched = false;
   for (const [key, value] of Object.entries(body)) {
     const existing = await db
       .select()
@@ -100,7 +114,13 @@ proxySettingsRouter.put("/", async (c) => {
     } else {
       await db.insert(settings).values({ key, value });
     }
+
+    if (key === "load_balancing_method" || /^provider_.+_lb_method$/.test(key)) {
+      lbCacheTouched = true;
+    }
   }
+
+  if (lbCacheTouched) pool.invalidateLoadBalancingCache();
 
   return c.json({ success: true, updated: Object.keys(body).length });
 });

@@ -166,6 +166,10 @@ export async function updateSettings(settings: Record<string, string>) {
   });
 }
 
+export async function fetchProviderList(): Promise<{ data: string[] }> {
+  return fetchApi("/api/settings/providers");
+}
+
 export async function createAccount(account: { provider: string; email: string; password: string }) {
   return fetchApi("/api/accounts", {
     method: "POST",
