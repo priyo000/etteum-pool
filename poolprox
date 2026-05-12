@@ -1,0 +1,164 @@
+#!/bin/bash
+# poolprox - PoolProx2 management CLI
+# Usage: poolprox [start|stop|restart|status|logs|update|port|build]
+
+PROJECT_DIR="/home/priyo/dev/OpenProject/poolprox2"
+PID_FILE="$PROJECT_DIR/.poolprox.pid"
+LOG_FILE="$PROJECT_DIR/.poolprox.log"
+ENV_FILE="$PROJECT_DIR/.env"
+
+is_running() {
+  if [ -f "$PID_FILE" ]; then
+    local pid=$(cat "$PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+    rm -f "$PID_FILE"
+  fi
+  return 1
+}
+
+rotate_log() {
+  if [ -f "$LOG_FILE" ]; then
+    local size=$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
+    if [ "$size" -gt 5242880 ]; then
+      tail -n 1000 "$LOG_FILE" > "$LOG_FILE.tmp"
+      mv "$LOG_FILE.tmp" "$LOG_FILE"
+    fi
+  fi
+}
+
+do_start() {
+  if is_running; then
+    echo "PoolProx already running (PID $(cat $PID_FILE))"
+    return 0
+  fi
+
+  rotate_log
+  echo "Starting PoolProx..."
+  cd "$PROJECT_DIR"
+  nohup bun scripts/production.ts --skip-build >> "$LOG_FILE" 2>&1 &
+  local pid=$!
+  echo "$pid" > "$PID_FILE"
+  sleep 1
+
+  if kill -0 "$pid" 2>/dev/null; then
+    source "$ENV_FILE" 2>/dev/null
+    echo "✅ PoolProx started (PID $pid)"
+    echo "   Backend:   http://localhost:${PORT:-1630}"
+    echo "   Dashboard: http://localhost:${DASHBOARD_PORT:-1631}"
+    echo "   Logs:      poolprox logs"
+  else
+    rm -f "$PID_FILE"
+    echo "❌ Failed to start. Check logs: $LOG_FILE"
+    tail -5 "$LOG_FILE"
+    return 1
+  fi
+}
+
+do_stop() {
+  if ! is_running; then
+    echo "PoolProx is not running"
+    return 0
+  fi
+
+  local pid=$(cat "$PID_FILE")
+  echo "Stopping PoolProx (PID $pid)..."
+  kill "$pid" 2>/dev/null
+
+  local i=0
+  while kill -0 "$pid" 2>/dev/null && [ $i -lt 10 ]; do
+    sleep 0.5
+    i=$((i + 1))
+  done
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+  fi
+
+  rm -f "$PID_FILE"
+  echo "⏹️  PoolProx stopped"
+}
+
+case "$1" in
+  start)
+    do_start
+    ;;
+  stop)
+    do_stop
+    ;;
+  restart)
+    do_stop
+    sleep 1
+    do_start
+    ;;
+  status)
+    if is_running; then
+      echo "✅ PoolProx is running (PID $(cat "$PID_FILE"))"
+      source "$ENV_FILE" 2>/dev/null
+      echo "   Backend:   http://localhost:${PORT:-1630}"
+      echo "   Dashboard: http://localhost:${DASHBOARD_PORT:-1631}"
+    else
+      echo "⏹️  PoolProx is not running"
+    fi
+    ;;
+  logs)
+    if [ "$2" = "-f" ] || [ -z "$2" ]; then
+      tail -f "$LOG_FILE"
+    else
+      tail -n "${2:-50}" "$LOG_FILE"
+    fi
+    ;;
+  update)
+    echo "📦 Pulling latest..."
+    cd "$PROJECT_DIR" && git pull
+    echo "📦 Installing dependencies..."
+    bun install
+    echo "🔨 Building dashboard..."
+    cd "$PROJECT_DIR/dashboard" && bun run build
+    echo "🔄 Restarting..."
+    do_stop
+    sleep 1
+    do_start
+    ;;
+  build)
+    echo "🔨 Building dashboard..."
+    cd "$PROJECT_DIR/dashboard" && bun run build
+    echo "🔄 Restarting..."
+    do_stop
+    sleep 1
+    do_start
+    ;;
+  port)
+    if [ -z "$2" ] || [ -z "$3" ]; then
+      source "$ENV_FILE" 2>/dev/null
+      echo "Current ports: API=${PORT:-1630} Dashboard=${DASHBOARD_PORT:-1631}"
+      echo "Usage: poolprox port <api_port> <dashboard_port>"
+      exit 0
+    fi
+    sed -i "s/^PORT=.*/PORT=$2/" "$ENV_FILE"
+    sed -i "s/^DASHBOARD_PORT=.*/DASHBOARD_PORT=$3/" "$ENV_FILE"
+    echo "✅ Ports changed: API=$2 Dashboard=$3"
+    if is_running; then
+      echo "🔄 Restarting with new ports..."
+      do_stop
+      sleep 1
+      do_start
+    fi
+    ;;
+  *)
+    echo "poolprox - PoolProx2 Management CLI"
+    echo ""
+    echo "Usage: poolprox <command>"
+    echo ""
+    echo "Commands:"
+    echo "  start       Start the server"
+    echo "  stop        Stop the server"
+    echo "  restart     Restart the server"
+    echo "  status      Show server status"
+    echo "  logs        Follow server logs (poolprox logs -f)"
+    echo "  update      Pull git, install deps, build, restart"
+    echo "  build       Rebuild dashboard and restart"
+    echo "  port        Show/change ports (poolprox port 1630 1631)"
+    ;;
+esac

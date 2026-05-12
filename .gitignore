@@ -56,7 +56,7 @@ drizzle/
 # Debug artifacts
 *.png
 EOF
-poolprox
+
 
 # Playwright MCP runtime
 .playwright-mcp/
