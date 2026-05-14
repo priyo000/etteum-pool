@@ -9,17 +9,14 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle as DTitle,
-  DialogTrigger,
   DialogDescription,
-  DialogClose,
 } from "@/components/ui/dialog";
-import { Plus, Upload, RefreshCw, Play, RotateCcw } from "lucide-react";
+import { Plus, RefreshCw, Play, RotateCcw } from "lucide-react";
 import {
   createAccount,
   fetchAccounts,
   fetchAuthQueue,
   fetchWarmupQueue,
-  importAccounts,
   loginAccounts,
   loginAllAccounts,
   warmupAllAccounts,
@@ -56,11 +53,7 @@ export default function Accounts() {
   const [warmupQueue, setWarmupQueue] = useState<any>(null);
 
   const [addForm, setAddForm] = useState({ email: "", password: "", provider: "kiro" as Provider, browserEngine: "camoufox", headless: false });
-  const [bulkText, setBulkText] = useState("");
-  const [bulkProviders, setBulkProviders] = useState<Provider[]>(["kiro", "kiro-pro", "codebuddy", "canva", "zai", "moclaw"]);
-  const [bulkHeadless, setBulkHeadless] = useState(true);
-  const [bulkConcurrency, setBulkConcurrency] = useState(2);
-  const [bulkBrowserEngine, setBulkBrowserEngine] = useState("camoufox");
+  const [addDialogProvider, setAddDialogProvider] = useState<Provider | null>(null);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingRef = useRef(false);
 
@@ -108,25 +101,14 @@ export default function Accounts() {
   function showError(err: unknown) { setError(err instanceof Error ? err.message : String(err)); setMessage(null); }
 
   async function handleAdd() {
+    if (!addDialogProvider) return;
     try {
-      const payload: any = { email: addForm.email, password: addForm.password, provider: addForm.provider, headless: addForm.headless };
-      if (addForm.provider === "kiro-pro") payload.browserEngine = addForm.browserEngine;
+      const payload: any = { email: addForm.email, password: addForm.password, provider: addDialogProvider, headless: addForm.headless };
+      if (addDialogProvider === "kiro-pro") payload.browserEngine = addForm.browserEngine;
       await createAccount(payload);
       showSuccess("Account added and bot login started.");
       setAddForm({ email: "", password: "", provider: "kiro", browserEngine: "camoufox", headless: false });
-      await load();
-      navigate("/bot-logs");
-    } catch (err) { showError(err); }
-  }
-
-  async function handleBulkImport() {
-    if (bulkProviders.length === 0) { showError(new Error("Pilih minimal 1 provider.")); return; }
-    try {
-      const opts: any = { headless: bulkHeadless, concurrency: bulkConcurrency };
-      if (bulkProviders.includes("kiro-pro")) opts.browserEngine = bulkBrowserEngine;
-      const res = await importAccounts(bulkText, bulkProviders, opts) as any;
-      showSuccess(res.message || "Bulk import queued.");
-      setBulkText("");
+      setAddDialogProvider(null);
       await load();
       navigate("/bot-logs");
     } catch (err) { showError(err); }
@@ -150,10 +132,6 @@ export default function Accounts() {
     await loginAccounts(ids);
     showSuccess(`Queued ${ids.length} ${labelProvider(provider)} error accounts for retry.`);
     await load();
-  }
-
-  function toggleBulkProvider(provider: Provider) {
-    setBulkProviders((c) => c.includes(provider) ? c.filter((p) => p !== provider) : [...c, provider]);
   }
 
   const providerStats = useMemo(() => {
@@ -185,106 +163,6 @@ export default function Accounts() {
           <Button variant="outline" size="sm" onClick={handleLoginAll}>
             <Play className="w-4 h-4 mr-2" /> Login Pending
           </Button>
-
-          {/* Bulk Add */}
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm"><Upload className="w-4 h-4 mr-2" /> Bulk Add</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DTitle>Bulk Add Accounts</DTitle>
-                <DialogDescription>Paste email|password lines, choose providers.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm text-[var(--foreground)]">Providers</label>
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    {providers.map((p) => (
-                      <button key={p} type="button" onClick={() => toggleBulkProvider(p)}
-                        className={`rounded-md px-3 py-1.5 text-xs font-medium border ${bulkProviders.includes(p) ? "border-[var(--primary)] text-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)]"}`}
-                      >{labelProvider(p)}</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-3 rounded-md border border-[var(--border)] bg-[var(--secondary)] p-3 md:grid-cols-2">
-                  <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
-                    <input type="checkbox" checked={bulkHeadless} onChange={(e) => setBulkHeadless(e.target.checked)} className="h-4 w-4 rounded border-[var(--border)]" />
-                    Run browser headless
-                  </label>
-                  <div>
-                    <label className="text-sm text-[var(--foreground)]">Parallel browsers</label>
-                    <select value={bulkConcurrency} onChange={(e) => setBulkConcurrency(Number(e.target.value))} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map((v) => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </div>
-                  {bulkProviders.includes("kiro-pro") && (
-                    <div className="md:col-span-2">
-                      <label className="text-sm text-[var(--foreground)]">Browser Engine (Kiro Pro)</label>
-                      <select value={bulkBrowserEngine} onChange={(e) => setBulkBrowserEngine(e.target.value)} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
-                        <option value="camoufox">Camoufox (Anti-detect, default)</option>
-                        <option value="chromium">Chromium (Playwright)</option>
-                      </select>
-                    </div>
-                  )}
-                  <p className="md:col-span-2 text-xs text-[var(--muted-foreground)]">Semakin banyak parallel browsers, butuh CPU/RAM lebih kuat.</p>
-                </div>
-                <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)}
-                  className="w-full h-40 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
-                  placeholder="email@example.com|password123&#10;another@example.com|pass456" />
-              </div>
-              <div className="flex justify-end gap-2">
-                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-                <Button onClick={handleBulkImport}>Import & Queue Login</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {/* Add Account */}
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button size="sm"><Plus className="w-4 h-4 mr-2" /> Add Account</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DTitle>Add Account</DTitle>
-                <DialogDescription>Add a single provider account to the pool.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm text-[var(--foreground)]">Email</label>
-                  <Input value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} placeholder="email@example.com" className="mt-1" />
-                </div>
-                <div>
-                  <label className="text-sm text-[var(--foreground)]">Password</label>
-                  <Input value={addForm.password} onChange={(e) => setAddForm({ ...addForm, password: e.target.value })} type="password" placeholder="********" className="mt-1" />
-                </div>
-                <div>
-                  <label className="text-sm text-[var(--foreground)]">Provider</label>
-                  <select value={addForm.provider} onChange={(e) => setAddForm({ ...addForm, provider: e.target.value as Provider })} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
-                    {providers.map((p) => <option key={p} value={p}>{labelProvider(p)}</option>)}
-                  </select>
-                </div>
-                {addForm.provider === "kiro-pro" && (
-                  <div>
-                    <label className="text-sm text-[var(--foreground)]">Browser Engine</label>
-                    <select value={addForm.browserEngine} onChange={(e) => setAddForm({ ...addForm, browserEngine: e.target.value })} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
-                      <option value="camoufox">Camoufox (Anti-detect, default)</option>
-                      <option value="chromium">Chromium (Playwright)</option>
-                    </select>
-                  </div>
-                )}
-                <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
-                  <input type="checkbox" checked={addForm.headless} onChange={(e) => setAddForm({ ...addForm, headless: e.target.checked })} className="h-4 w-4 rounded border-[var(--border)]" />
-                  Run browser headless
-                </label>
-              </div>
-              <div className="flex justify-end gap-2">
-                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-                <Button onClick={handleAdd}>Add Account</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
@@ -340,18 +218,58 @@ export default function Accounts() {
               </div>
 
               {/* Buttons */}
-              <div className="grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
+              <div className="grid grid-cols-3 gap-2" onClick={(e) => e.stopPropagation()}>
+                <Button className="w-full" variant="default" size="sm" onClick={() => setAddDialogProvider(stat.provider)}>
+                  <Plus className="mr-1 h-4 w-4" /> Add
+                </Button>
                 <Button className="w-full" variant="outline" size="sm" onClick={() => handleWarmupProvider(stat.provider)} disabled={stat.provider === "canva"}>
-                  <RefreshCw className="mr-2 h-4 w-4" /> Warmup All
+                  <RefreshCw className="mr-1 h-4 w-4" /> Warmup
                 </Button>
                 <Button className="w-full" variant="outline" size="sm" onClick={() => handleRetryErrors(stat.provider)} disabled={stat.error === 0}>
-                  <RotateCcw className="mr-2 h-4 w-4" /> Retry Errors
+                  <RotateCcw className="mr-1 h-4 w-4" /> Retry
                 </Button>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      {/* Add Account Dialog (per-provider) */}
+      <Dialog open={addDialogProvider !== null} onOpenChange={(open) => { if (!open) setAddDialogProvider(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DTitle>Add {addDialogProvider ? labelProvider(addDialogProvider) : ""} Account</DTitle>
+            <DialogDescription>Add account for {addDialogProvider ? labelProvider(addDialogProvider) : "this provider"}.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm text-[var(--foreground)]">Email</label>
+              <Input value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} placeholder="email@example.com" className="mt-1" />
+            </div>
+            <div>
+              <label className="text-sm text-[var(--foreground)]">Password</label>
+              <Input value={addForm.password} onChange={(e) => setAddForm({ ...addForm, password: e.target.value })} type="password" placeholder="********" className="mt-1" />
+            </div>
+            {addDialogProvider === "kiro-pro" && (
+              <div>
+                <label className="text-sm text-[var(--foreground)]">Browser Engine</label>
+                <select value={addForm.browserEngine} onChange={(e) => setAddForm({ ...addForm, browserEngine: e.target.value })} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
+                  <option value="camoufox">Camoufox (Anti-detect, default)</option>
+                  <option value="chromium">Chromium (Playwright)</option>
+                </select>
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+              <input type="checkbox" checked={addForm.headless} onChange={(e) => setAddForm({ ...addForm, headless: e.target.checked })} className="h-4 w-4 rounded border-[var(--border)]" />
+              Run browser headless
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setAddDialogProvider(null)}>Cancel</Button>
+            <Button onClick={handleAdd}>Add Account</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
