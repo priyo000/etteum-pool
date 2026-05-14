@@ -401,6 +401,14 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
       streamedEvents.push(event);
       if (event.type === "progress") {
         emitProgressLog(account, event);
+      } else if (event.type === "upgrade_card_result") {
+        // Immediately update card status in DB when declined — so next account won't retry it
+        const cardLast4 = (event as any).card_last4;
+        const cardStatus = (event as any).card_status;
+        if (cardLast4 && cardStatus && cardStatus !== "success") {
+          const status = cardStatus === "declined" ? "declined" as const : "error" as const;
+          void handleCardResult(account.id, cardLast4, status);
+        }
       } else if (event.type === "error") {
         const log = addAuthLog({
           type: "login_failed",
