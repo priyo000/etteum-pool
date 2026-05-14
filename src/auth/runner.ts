@@ -19,19 +19,17 @@ export function stopLoginProcess(accountId: number): boolean {
   if (!proc) return false;
   manuallyStoppedIds.add(accountId);
   try {
-    // Kill the entire process group to ensure child processes (browsers) are also killed
-    if (proc.pid) {
-      try { process.kill(-proc.pid, "SIGTERM"); } catch {}
+    const pid = proc.pid;
+    // Immediately SIGKILL the process and all its children
+    if (pid) {
+      // Kill all child processes (browsers, etc) via pkill
+      try { Bun.spawnSync(["pkill", "-9", "-P", String(pid)]); } catch {}
+      // Kill process group
+      try { process.kill(-pid, "SIGKILL"); } catch {}
+      // Kill the process itself
+      try { process.kill(pid, "SIGKILL"); } catch {}
     }
-    proc.kill("SIGTERM");
-    setTimeout(() => {
-      try {
-        if (proc.pid) {
-          try { process.kill(-proc.pid, "SIGKILL"); } catch {}
-        }
-        proc.kill("SIGKILL");
-      } catch {}
-    }, 2000);
+    try { proc.kill("SIGKILL"); } catch {}
   } catch {}
   activeProcesses.delete(accountId);
   return true;
@@ -207,7 +205,7 @@ async function readTextStream(
   return full;
 }
 
-async function waitForProcessExit(proc: ReturnType<typeof Bun.spawn>, timeoutMs = config.authProcessTimeoutMs): Promise<number> {
+async function waitForProcessExit(proc: ReturnType<typeof Bun.spawn>, timeoutMs = config.authProcessTimeoutMs, accountId?: number): Promise<number> {
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -222,8 +220,24 @@ async function waitForProcessExit(proc: ReturnType<typeof Bun.spawn>, timeoutMs 
     }, timeoutMs);
   });
 
+  // Also resolve immediately if manually stopped
+  const stoppedCheck = accountId
+    ? new Promise<number>((resolve) => {
+        const interval = setInterval(() => {
+          if (manuallyStoppedIds.has(accountId)) {
+            clearInterval(interval);
+            resolve(-1);
+          }
+        }, 200);
+        // Cleanup interval when process exits naturally
+        proc.exited.then(() => clearInterval(interval)).catch(() => clearInterval(interval));
+      })
+    : null;
+
   try {
-    return await Promise.race([proc.exited, timeout]);
+    const promises: Promise<number>[] = [proc.exited, timeout as any];
+    if (stoppedCheck) promises.push(stoppedCheck);
+    return await Promise.race(promises);
   } finally {
     if (timer) clearTimeout(timer);
     if (timedOut) {
@@ -428,7 +442,7 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
     const timeoutMs = (provider === "kiro-pro" && config.kiroProUpgrade)
       ? Math.max(config.authProcessTimeoutMs, 15 * 60 * 1000)
       : config.authProcessTimeoutMs;
-    const exitCode = await waitForProcessExit(proc, timeoutMs);
+    const exitCode = await waitForProcessExit(proc, timeoutMs, account.id);
     const [stdoutResult, stderrResult] = await Promise.allSettled([stdoutPromise, stderrPromise]);
     const stdout = stdoutResult.status === "fulfilled" ? stdoutResult.value : "";
     const stderr = stderrResult.status === "fulfilled" ? stderrResult.value : String(stderrResult.reason || "");
