@@ -250,6 +250,12 @@ class LoginQueue {
       // Don't retry if explicitly marked (e.g. kiro-pro upgrade failed but login succeeded)
       if ((result as any).noRetry) {
         this.totalFailed++;
+        // If not_eligible error, stop entire queue — this is a global condition
+        const errorMsg = (result as any).error || "";
+        if (errorMsg.includes("not_eligible") || errorMsg.includes("non-zero")) {
+          this.queue = [];
+          broadcast({ type: "queue_cleared", data: { reason: errorMsg } });
+        }
       } else if (item.retries < this.maxRetries) {
         // Re-queue with incremented retry count and delay
         if (item.generation !== this.clearGeneration) return;
