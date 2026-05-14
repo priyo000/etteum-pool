@@ -72,6 +72,53 @@ export const usageSummary = pgTable("usage_summary", {
   index("usage_summary_provider_idx").on(table.provider, table.bucket),
 ]);
 
+export const vccCards = pgTable("vcc_cards", {
+  id: serial("id").primaryKey(),
+  number: text("number").notNull(),
+  expMonth: text("exp_month").notNull(),
+  expYear: text("exp_year").notNull(),
+  cvv: text("cvv").notNull(),
+  name: text("name").default("John Doe"),
+  status: text("status").notNull().default("active"), // active, used, declined
+  usedByAccountId: integer("used_by_account_id").references(() => accounts.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("vcc_cards_status_idx").on(table.status),
+]);
+
+export const vccTransactions = pgTable("vcc_transactions", {
+  id: serial("id").primaryKey(),
+  accountId: integer("account_id").references(() => accounts.id),
+  cardLast4: text("card_last4").notNull(),
+  cardBrand: text("card_brand"), // visa, mastercard, etc
+  amount: real("amount"),
+  currency: text("currency").default("usd"),
+  status: text("status").notNull(), // success, declined, error
+  stripeChargeId: text("stripe_charge_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("vcc_transactions_account_idx").on(table.accountId),
+  index("vcc_transactions_status_idx").on(table.status),
+]);
+
+export const proxyPool = pgTable("proxy_pool", {
+  id: serial("id").primaryKey(),
+  url: text("url").notNull(),
+  type: text("type").notNull().default("http"), // http | socks5
+  label: text("label"),
+  status: text("status").notNull().default("active"), // active | disabled | error
+  lastUsedAt: timestamp("last_used_at"),
+  lastCheckedAt: timestamp("last_checked_at"),
+  errorMessage: text("error_message"),
+  successCount: integer("success_count").default(0),
+  failCount: integer("fail_count").default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("proxy_pool_status_idx").on(table.status),
+]);
+
 // Type exports
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
@@ -80,3 +127,9 @@ export type NewRequestLog = typeof requestLogs.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
 export type UsageSummary = typeof usageSummary.$inferSelect;
 export type NewUsageSummary = typeof usageSummary.$inferInsert;
+export type VccTransaction = typeof vccTransactions.$inferSelect;
+export type NewVccTransaction = typeof vccTransactions.$inferInsert;
+export type VccCard = typeof vccCards.$inferSelect;
+export type NewVccCard = typeof vccCards.$inferInsert;
+export type ProxyPoolEntry = typeof proxyPool.$inferSelect;
+export type NewProxyPoolEntry = typeof proxyPool.$inferInsert;

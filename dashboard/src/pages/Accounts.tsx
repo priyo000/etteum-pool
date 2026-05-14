@@ -55,11 +55,12 @@ export default function Accounts() {
   const [queue, setQueue] = useState<any>(null);
   const [warmupQueue, setWarmupQueue] = useState<any>(null);
 
-  const [addForm, setAddForm] = useState({ email: "", password: "", provider: "kiro" as Provider });
+  const [addForm, setAddForm] = useState({ email: "", password: "", provider: "kiro" as Provider, browserEngine: "camoufox", headless: false });
   const [bulkText, setBulkText] = useState("");
   const [bulkProviders, setBulkProviders] = useState<Provider[]>(["kiro", "kiro-pro", "codebuddy", "canva", "zai", "moclaw"]);
   const [bulkHeadless, setBulkHeadless] = useState(true);
   const [bulkConcurrency, setBulkConcurrency] = useState(2);
+  const [bulkBrowserEngine, setBulkBrowserEngine] = useState("camoufox");
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingRef = useRef(false);
 
@@ -108,9 +109,11 @@ export default function Accounts() {
 
   async function handleAdd() {
     try {
-      await createAccount(addForm);
+      const payload: any = { email: addForm.email, password: addForm.password, provider: addForm.provider, headless: addForm.headless };
+      if (addForm.provider === "kiro-pro") payload.browserEngine = addForm.browserEngine;
+      await createAccount(payload);
       showSuccess("Account added and bot login started.");
-      setAddForm({ email: "", password: "", provider: "kiro" });
+      setAddForm({ email: "", password: "", provider: "kiro", browserEngine: "camoufox", headless: false });
       await load();
       navigate("/bot-logs");
     } catch (err) { showError(err); }
@@ -119,7 +122,9 @@ export default function Accounts() {
   async function handleBulkImport() {
     if (bulkProviders.length === 0) { showError(new Error("Pilih minimal 1 provider.")); return; }
     try {
-      const res = await importAccounts(bulkText, bulkProviders, { headless: bulkHeadless, concurrency: bulkConcurrency }) as any;
+      const opts: any = { headless: bulkHeadless, concurrency: bulkConcurrency };
+      if (bulkProviders.includes("kiro-pro")) opts.browserEngine = bulkBrowserEngine;
+      const res = await importAccounts(bulkText, bulkProviders, opts) as any;
       showSuccess(res.message || "Bulk import queued.");
       setBulkText("");
       await load();
@@ -213,6 +218,15 @@ export default function Accounts() {
                       {[1, 2, 3, 4, 5, 6, 7, 8].map((v) => <option key={v} value={v}>{v}</option>)}
                     </select>
                   </div>
+                  {bulkProviders.includes("kiro-pro") && (
+                    <div className="md:col-span-2">
+                      <label className="text-sm text-[var(--foreground)]">Browser Engine (Kiro Pro)</label>
+                      <select value={bulkBrowserEngine} onChange={(e) => setBulkBrowserEngine(e.target.value)} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
+                        <option value="camoufox">Camoufox (Anti-detect, default)</option>
+                        <option value="chromium">Chromium (Playwright)</option>
+                      </select>
+                    </div>
+                  )}
                   <p className="md:col-span-2 text-xs text-[var(--muted-foreground)]">Semakin banyak parallel browsers, butuh CPU/RAM lebih kuat.</p>
                 </div>
                 <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)}
@@ -251,6 +265,19 @@ export default function Accounts() {
                     {providers.map((p) => <option key={p} value={p}>{labelProvider(p)}</option>)}
                   </select>
                 </div>
+                {addForm.provider === "kiro-pro" && (
+                  <div>
+                    <label className="text-sm text-[var(--foreground)]">Browser Engine</label>
+                    <select value={addForm.browserEngine} onChange={(e) => setAddForm({ ...addForm, browserEngine: e.target.value })} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
+                      <option value="camoufox">Camoufox (Anti-detect, default)</option>
+                      <option value="chromium">Chromium (Playwright)</option>
+                    </select>
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+                  <input type="checkbox" checked={addForm.headless} onChange={(e) => setAddForm({ ...addForm, headless: e.target.checked })} className="h-4 w-4 rounded border-[var(--border)]" />
+                  Run browser headless
+                </label>
               </div>
               <div className="flex justify-end gap-2">
                 <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>

@@ -594,9 +594,9 @@ export class KiroProvider extends BaseProvider {
       "x-amz-user-agent": "pool-proxy/1.0.0",
     };
 
-    // Handle -thinking suffix
-    const isThinking = request.model.endsWith("-thinking");
-    const actualModel = isThinking ? request.model.replace("-thinking", "") : request.model;
+    // Handle -thinking suffix or reasoning_effort from request body
+    const isThinking = request.model.endsWith("-thinking") || !!request.reasoning_effort || !!request.thinking;
+    const actualModel = request.model.endsWith("-thinking") ? request.model.replace("-thinking", "") : request.model;
 
     const lastUser = [...request.messages].reverse().find((m) => m.role === "user");
     const systemPrompt = this.textFromContent(request.messages.find((m) => m.role === "system")?.content || "");
@@ -803,6 +803,7 @@ export class KiroProvider extends BaseProvider {
         const toolBuffers = new Map<string, string>();
         let nextToolIndex = 0;
         const allEvents: Array<{ headers: Record<string, string>; payload: any }> = [];
+        let streamedContentLength = 0;
 
         const enqueue = (delta: any, finish_reason: string | null = null, usage?: any) => {
           const chunk: any = {
@@ -832,7 +833,7 @@ export class KiroProvider extends BaseProvider {
                 throw new Error(typeof payload === "string" ? payload : payload?.message || event.headers[":error-code"] || "Kiro stream error");
               }
               const text = this.extractEventText(payload, eventType);
-              if (text) enqueue({ content: text });
+              if (text) { streamedContentLength += text.length; enqueue({ content: text }); }
               const tool = payload?.toolUseEvent || (eventType === "toolUseEvent" ? payload : null);
               if (tool?.toolUseId && (tool?.name || toolIndexes.has(tool.toolUseId))) {
                 const isFirstChunk = !toolIndexes.has(tool.toolUseId);
@@ -884,8 +885,10 @@ export class KiroProvider extends BaseProvider {
           // Extract real usage from Kiro's contextUsageEvent and meteringEvent
           const totalTokens = this.extractKiroContextTokens(allEvents, model);
           const creditsUsed = extractCreditsRef(allEvents);
+          const completionTokens = Math.max(1, Math.ceil(streamedContentLength / 4));
+          const promptTokens = totalTokens > completionTokens ? totalTokens - completionTokens : 0;
           const usage = totalTokens > 0 || creditsUsed > 0
-            ? { prompt_tokens: 0, completion_tokens: 0, total_tokens: totalTokens, credits_used: creditsUsed }
+            ? { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens, credits_used: creditsUsed }
             : undefined;
           enqueue({}, toolIndexes.size > 0 ? "tool_calls" : "stop", usage);
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));

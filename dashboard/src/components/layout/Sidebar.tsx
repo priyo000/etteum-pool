@@ -9,6 +9,8 @@ import {
   BarChart3,
   Sliders,
   Bot,
+  CreditCard,
+  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +38,8 @@ const navSections: NavSection[] = [
     title: "PROXY",
     items: [
       { label: "API Key", path: "/api-key", icon: Key },
+      { label: "Proxy Pool", path: "/proxy-pool", icon: Globe },
+      { label: "VCC Pool", path: "/vcc-pool", icon: CreditCard },
       { label: "Proxy Settings", path: "/settings", icon: Sliders },
     ],
   },

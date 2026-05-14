@@ -132,33 +132,53 @@ def generate_media(cookies: dict, prompt: str, mode: str = "image", timeout: int
         state = d.get("B", "")
 
         if state == "C":  # Done
-            results = d.get("F", {}).get("g", [])
+            # Canva changed response structure: results moved from F.g to F.f
+            # F.f contains dicts with B=url, G=thumbnail, J=width, K=height
+            # F.g now contains plain media ID strings (not URLs)
+            f_block = d.get("F", {})
+            results = f_block.get("f", []) or f_block.get("g", [])
             if not results:
                 return {"ok": False, "error": "generation completed but no results"}
 
+            # Normalize: F.f items use J/K for dimensions, F.g items use I/H
+            normalized = []
+            for item in results:
+                if isinstance(item, dict):
+                    normalized.append({
+                        "B": item.get("B", ""),
+                        "G": item.get("G", ""),
+                        "width": item.get("J") or item.get("I"),
+                        "height": item.get("K") or item.get("H"),
+                    })
+                elif isinstance(item, str) and item.startswith("http"):
+                    normalized.append({"B": item, "G": "", "width": None, "height": None})
+                else:
+                    continue
+
+            if not normalized:
+                return {"ok": False, "error": "generation completed but no usable results"}
+
             # Single result
-            if len(results) == 1:
-                item = results[0]
+            if len(normalized) == 1:
+                item = normalized[0]
                 return {
                     "ok": True,
-                    "media_url": item.get("B", ""),
-                    "thumbnail_url": item.get("G", ""),
-                    "width": item.get("I"),
-                    "height": item.get("H"),
-                    "size": item.get("K"),
+                    "media_url": item["B"],
+                    "thumbnail_url": item["G"],
+                    "width": item["width"],
+                    "height": item["height"],
                     "mode": mode,
                     "count": 1,
                 }
 
             # Multiple results
             images = []
-            for item in results:
+            for item in normalized:
                 images.append({
-                    "url": item.get("B", ""),
-                    "thumbnail": item.get("G", ""),
-                    "width": item.get("I"),
-                    "height": item.get("H"),
-                    "size": item.get("K"),
+                    "url": item["B"],
+                    "thumbnail": item["G"],
+                    "width": item["width"],
+                    "height": item["height"],
                 })
             return {
                 "ok": True,

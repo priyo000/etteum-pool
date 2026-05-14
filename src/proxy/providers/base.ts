@@ -18,6 +18,8 @@ export interface ChatCompletionRequest {
   presence_penalty?: number;
   tools?: any[];
   tool_choice?: any;
+  reasoning_effort?: string;
+  thinking?: { type: string; budget_tokens?: number };
 }
 
 export interface ChatCompletionChoice {
@@ -230,10 +232,21 @@ export abstract class BaseProvider {
   }
 
   protected async fetchWithTimeout(url: string, init: RequestInit, timeoutMs = config.providerRequestTimeoutMs): Promise<Response> {
+    const { getNextProxy, markProxySuccess, markProxyFail } = await import("../../services/proxy-pool");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const proxy = await getNextProxy();
     try {
-      return await fetch(url, { ...init, signal: controller.signal });
+      const response = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        ...(proxy ? { proxy: proxy.url } : {}),
+      } as any);
+      if (proxy) void markProxySuccess(proxy.id);
+      return response;
+    } catch (err) {
+      if (proxy) void markProxyFail(proxy.id, err instanceof Error ? err.message : String(err));
+      throw err;
     } finally {
       clearTimeout(timer);
     }

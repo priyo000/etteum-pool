@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { loginQueue } from "./queue";
 import { warmupQueue } from "./warmup-queue";
-import { loginAllProviders } from "./runner";
+import { loginAllProviders, stopLoginProcess, getActiveProcessIds } from "./runner";
 import { db } from "../db/index";
 import { accounts } from "../db/schema";
 import { eq } from "drizzle-orm";
@@ -49,6 +49,31 @@ authRouter.post("/login-all", async (c) => {
 });
 
 /**
+ * POST /api/auth/stop/:id - Stop a running login process
+ */
+authRouter.post("/stop/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  const killed = stopLoginProcess(id);
+  if (killed) {
+    return c.json({ message: `Stopped login process for account #${id}` });
+  }
+  return c.json({ error: "No active process found for this account" }, 404);
+});
+
+/**
+ * POST /api/auth/stop-all - Stop all running login processes and clear queue
+ */
+authRouter.post("/stop-all", async (c) => {
+  loginQueue.clear();
+  warmupQueue.clear();
+  const activeIds = getActiveProcessIds();
+  for (const id of activeIds) {
+    stopLoginProcess(id);
+  }
+  return c.json({ message: `Queues cleared and ${activeIds.length} active processes killed` });
+});
+
+/**
  * POST /api/auth/login-bulk - Login specific accounts by IDs
  */
 authRouter.post("/login-bulk", async (c) => {
@@ -78,6 +103,7 @@ authRouter.post("/bulk-add", async (c) => {
     providers?: string[];
     headless?: boolean;
     concurrency?: number;
+    browserEngine?: string;
   }>();
 
   if (!body.accounts || !Array.isArray(body.accounts) || body.accounts.length === 0) {
@@ -101,7 +127,7 @@ authRouter.post("/bulk-add", async (c) => {
     providers: validProviders,
   }));
 
-  const result = await loginQueue.bulkAdd(items, { headless: body.headless, concurrency: body.concurrency });
+  const result = await loginQueue.bulkAdd(items, { headless: body.headless, concurrency: body.concurrency, browserEngine: body.browserEngine });
 
   return c.json({
     message: `Created ${result.created} accounts, queued ${result.queued} for login`,
@@ -125,6 +151,7 @@ authRouter.post("/import", async (c) => {
     providers?: string[];
     headless?: boolean;
     concurrency?: number;
+    browserEngine?: string;
   }>();
 
   if (!body.text || !body.text.trim()) {
@@ -184,7 +211,7 @@ authRouter.post("/import", async (c) => {
     providers,
   }));
 
-  const result = await loginQueue.bulkAdd(items, { headless: body.headless, concurrency: body.concurrency });
+  const result = await loginQueue.bulkAdd(items, { headless: body.headless, concurrency: body.concurrency, browserEngine: body.browserEngine });
 
   return c.json({
     message: `Imported ${parsed.length} accounts → created ${result.created}, queued ${result.queued}`,

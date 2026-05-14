@@ -11,6 +11,8 @@ const Requests = lazy(() => import("./pages/Requests"));
 const Usage = lazy(() => import("./pages/Usage"));
 const Settings = lazy(() => import("./pages/Settings"));
 const BotLogs = lazy(() => import("./pages/BotLogs"));
+const VccPool = lazy(() => import("./pages/VccPool"));
+const ProxyPool = lazy(() => import("./pages/ProxyPool"));
 
 function RouteFallback() {
   return <div className="flex h-64 items-center justify-center text-sm text-[var(--muted-foreground)]">Loading...</div>;
@@ -30,6 +32,8 @@ export default function App() {
           <Route path="/bot-logs" element={<BotLogs />} />
           <Route path="/usage" element={<Usage />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/vcc-pool" element={<VccPool />} />
+          <Route path="/proxy-pool" element={<ProxyPool />} />
         </Route>
       </Routes>
     </Suspense>

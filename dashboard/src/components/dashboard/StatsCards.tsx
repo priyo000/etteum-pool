@@ -1,11 +1,18 @@
-import { Users, Activity, CheckCircle, Clock } from "lucide-react";
+import { Users, Activity, CheckCircle, Zap } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
 
 interface StatsData {
   accounts: { active: number; total: number };
   requests: number;
   successRate: number;
-  uptime: string;
+  totalTokens: number;
 }
 
 interface StatsCardsProps {
@@ -16,7 +23,7 @@ const defaultData: StatsData = {
   accounts: { active: 0, total: 0 },
   requests: 0,
   successRate: 0,
-  uptime: "0ms",
+  totalTokens: 0,
 };
 
 export default function StatsCards({ data = defaultData }: StatsCardsProps) {
@@ -24,7 +31,7 @@ export default function StatsCards({ data = defaultData }: StatsCardsProps) {
     {
       label: "Accounts",
       value: `${data.accounts.active}/${data.accounts.total}`,
-      subtitle: `${data.accounts.active} active`,
+      subtitle: `active`,
       icon: Users,
       color: "text-blue-400",
       bgColor: "bg-blue-400/10",
@@ -32,7 +39,7 @@ export default function StatsCards({ data = defaultData }: StatsCardsProps) {
     {
       label: "Requests",
       value: data.requests.toLocaleString(),
-      subtitle: "Last 24h",
+      subtitle: "All time",
       icon: Activity,
       color: "text-purple-400",
       bgColor: "bg-purple-400/10",
@@ -46,10 +53,10 @@ export default function StatsCards({ data = defaultData }: StatsCardsProps) {
       bgColor: "bg-green-400/10",
     },
     {
-      label: "Uptime",
-      value: data.uptime,
-      subtitle: "Last 30 days",
-      icon: Clock,
+      label: "Total Tokens",
+      value: formatTokens(data.totalTokens),
+      subtitle: "All time",
+      icon: Zap,
       color: "text-orange-400",
       bgColor: "bg-orange-400/10",
     },

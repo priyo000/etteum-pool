@@ -23,9 +23,9 @@ export default function Dashboard() {
 
   async function load() {
     await Promise.all([
-      fetchDashboardStats().then(setStats).catch(() => setStats(null)),
+      fetchDashboardStats(undefined, "all").then(setStats).catch(() => setStats(null)),
       fetchProviders().then((res: { data: any[] }) => setProviders(res.data || [])).catch(() => setProviders([])),
-      fetchModelUsage().then((res: { data: any[] }) => setModelStats(res.data || [])).catch(() => setModelStats([])),
+      fetchModelUsage(undefined, "all").then((res: { data: any[] }) => setModelStats(res.data || [])).catch(() => setModelStats([])),
     ]);
   }
 
@@ -44,7 +44,7 @@ export default function Dashboard() {
     },
     requests: totalRequests,
     successRate: totalRequests > 0 ? Number(((successRequests / totalRequests) * 100).toFixed(1)) : 0,
-    uptime: `${Math.floor(performance.now() / 1000)}s`,
+    totalTokens: Number(stats?.tokens?.total || 0),
   };
 
   const providerCards = providers.filter((data: any) => allowedProviders.has(data.provider)).map((data: any) => {

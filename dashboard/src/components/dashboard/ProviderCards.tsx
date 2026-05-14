@@ -65,7 +65,7 @@ export default function ProviderCards({ providers = defaultProviders }: Provider
                 </div>
                 <Progress
                   value={usedPercentage}
-                  indicatorClassName="rounded-full"
+                  indicatorClassName="rounded-full bg-[var(--progress-color)]"
                   style={{ ["--progress-color" as any]: provider.color }}
                   className="h-2"
                 />

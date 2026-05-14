@@ -67,14 +67,20 @@ export default function UsageChart({ data = defaultData, colorsByModel = {} }: U
             tickFormatter={(value) => formatTokenCount(Number(value))}
           />
           <Tooltip
-            formatter={(value) => formatTokenCount(Number(value))}
-            contentStyle={{
-              backgroundColor: "#1a1d27",
-              border: "1px solid #2d3748",
-              borderRadius: "8px",
-              color: "#e5e7eb",
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              const sorted = [...payload].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+              return (
+                <div style={{ backgroundColor: "#1a1d27", border: "1px solid #2d3748", borderRadius: "8px", padding: "8px 12px" }}>
+                  <p style={{ color: "#9ca3af", marginBottom: 4, fontSize: 12 }}>{label}</p>
+                  {sorted.map((entry) => (
+                    <p key={entry.name} style={{ color: entry.color, fontSize: 12, margin: "2px 0" }}>
+                      {entry.name} : {formatTokenCount(Number(entry.value || 0))}
+                    </p>
+                  ))}
+                </div>
+              );
             }}
-            labelStyle={{ color: "#9ca3af" }}
           />
           <Legend
             wrapperStyle={{ color: "#9ca3af", fontSize: "12px" }}

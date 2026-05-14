@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { clearAuthLogs, fetchAuthLogs, fetchAuthQueue, fetchWarmupQueue, getWsBase, loginAccount, loginAccounts } from "@/lib/api";
-import { AlertTriangle, CheckCircle, ChevronDown, RefreshCw, RotateCcw, Trash2, Radio } from "lucide-react";
+import { clearAuthLogs, fetchAuthLogs, fetchAuthQueue, fetchWarmupQueue, getWsBase, loginAccount, loginAccounts, stopAllAccounts } from "@/lib/api";
+import { AlertTriangle, CheckCircle, ChevronDown, RefreshCw, RotateCcw, Trash2, Radio, StopCircle } from "lucide-react";
 import { formatTimeID } from "@/lib/utils";
 
 interface AuthLog {
@@ -236,6 +236,11 @@ export default function BotLogs() {
     setLogs([]);
   }
 
+  async function handleStopAll() {
+    await stopAllAccounts();
+    await load().catch(() => {});
+  }
+
   async function handleRetry(accountId?: number) {
     if (!accountId) return;
     await loginAccount(accountId);
@@ -261,6 +266,7 @@ export default function BotLogs() {
         <div className="flex items-center gap-2">
           <Badge variant={connected ? "success" : "secondary"}>{connected ? "Live" : "Disconnected"}</Badge>
           <Button variant="outline" size="sm" onClick={load}><RefreshCw className="w-4 h-4 mr-2" />Refresh</Button>
+          <Button variant="destructive" size="sm" onClick={handleStopAll}><StopCircle className="w-4 h-4 mr-2" />Stop All</Button>
           <Button variant="outline" size="sm" onClick={handleClear}><Trash2 className="w-4 h-4 mr-2" />Clear</Button>
         </div>
       </div>

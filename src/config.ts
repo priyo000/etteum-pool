@@ -30,6 +30,12 @@ export const config = {
   // Windsurf API (dwgx/WindsurfAPI) settings
   windsurfApiPort: Number(process.env.WINDSURF_API_PORT) || 3003,
   windsurfApiKey: process.env.WINDSURF_API_KEY || "poolprox2-windsurf-internal",
+  // Kiro Pro upgrade settings
+  kiroProUpgrade: process.env.KIRO_PRO_UPGRADE === "true",
+  billingAddress: JSON.parse(process.env.BILLING_ADDRESS || '{"name":"John Doe","country":"US","line1":"123 Main St","city":"New York","state":"NY","postal_code":"10001"}'),
+  browserEngine: process.env.BROWSER_ENGINE || "camoufox",
+  captchaService: process.env.CAPTCHA_SERVICE || "none",
+  captchaApiKey: process.env.CAPTCHA_API_KEY || "",
   // Providers: kiro, kiro-pro, codebuddy, canva, zai, windsurf, moclaw
   providers: ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"] as const,
 } as const;

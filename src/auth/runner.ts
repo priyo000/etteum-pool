@@ -1,12 +1,45 @@
 import { config } from "../config";
 import { db } from "../db/index";
-import { accounts } from "../db/schema";
+import { accounts, settings } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { decrypt } from "../utils/crypto";
 import { broadcast } from "../ws/index";
 import type { Account } from "../db/schema";
 import { addAuthLog } from "./logs";
 import { providers } from "../proxy/router";
+import { getVccPoolFromDb, handleCardResult } from "../api/vcc";
+import { getNextProxy } from "../services/proxy-pool";
+
+// Process registry for active login processes — allows killing from outside
+const activeProcesses = new Map<number, ReturnType<typeof Bun.spawn>>();
+const manuallyStoppedIds = new Set<number>();
+
+export function stopLoginProcess(accountId: number): boolean {
+  const proc = activeProcesses.get(accountId);
+  if (!proc) return false;
+  manuallyStoppedIds.add(accountId);
+  try {
+    // Kill the entire process group to ensure child processes (browsers) are also killed
+    if (proc.pid) {
+      try { process.kill(-proc.pid, "SIGTERM"); } catch {}
+    }
+    proc.kill("SIGTERM");
+    setTimeout(() => {
+      try {
+        if (proc.pid) {
+          try { process.kill(-proc.pid, "SIGKILL"); } catch {}
+        }
+        proc.kill("SIGKILL");
+      } catch {}
+    }, 2000);
+  } catch {}
+  activeProcesses.delete(accountId);
+  return true;
+}
+
+export function getActiveProcessIds(): number[] {
+  return [...activeProcesses.keys()];
+}
 
 /**
  * Progress event emitted by the Python login script (one per line)
@@ -69,6 +102,7 @@ export interface LoginResult {
 
 export interface LoginOptions {
   headless?: boolean;
+  browserEngine?: string;
 }
 
 type QuotaSnapshot = { limit: number; remaining: number; used?: number; resetAt?: Date | string | null };
@@ -240,6 +274,45 @@ function extractResult(events: ScriptEvent[]): ScriptResultEvent | null {
   return null;
 }
 
+async function getKiroProUpgradeEnv(accountId: number): Promise<Record<string, string>> {
+  // Check env var first, then fall back to DB settings
+  let upgradeEnabled = config.kiroProUpgrade;
+  let billingAddress = config.billingAddress;
+
+  if (!upgradeEnabled) {
+    const [upgradeSetting] = await db.select().from(settings).where(eq(settings.key, "kiro_pro_upgrade"));
+    if (upgradeSetting?.value === "true") upgradeEnabled = true;
+  }
+
+  if (!upgradeEnabled) return {};
+
+  // Read billing address from DB settings if not set via env
+  if (!process.env.BILLING_ADDRESS) {
+    const keys = ["billing_name", "billing_country", "billing_line1", "billing_city", "billing_state", "billing_postal_code"];
+    const rows = await db.select().from(settings);
+    const map: Record<string, string> = {};
+    for (const r of rows) if (keys.includes(r.key) && r.value) map[r.key] = r.value;
+
+    if (Object.keys(map).length > 0) {
+      billingAddress = {
+        name: map.billing_name || billingAddress.name,
+        country: map.billing_country || billingAddress.country,
+        line1: map.billing_line1 || billingAddress.line1,
+        city: map.billing_city || billingAddress.city,
+        state: map.billing_state || billingAddress.state,
+        postal_code: map.billing_postal_code || billingAddress.postal_code,
+      };
+    }
+  }
+
+  // Pass full shuffled pool — each process gets a random order to minimize collision
+  return {
+    BATCHER_KIRO_PRO_UPGRADE: "true",
+    BATCHER_VCC_POOL: JSON.stringify(await getVccPoolFromDb()),
+    BATCHER_BILLING_ADDRESS: JSON.stringify(billingAddress),
+  };
+}
+
 /**
  * Run the Python login script for a SINGLE provider.
  * Uses ENOWX_ALLOWED_PROVIDERS env to filter to just the needed provider.
@@ -280,6 +353,12 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
       },
     });
 
+    const kiroProEnv = provider === "kiro-pro"
+      ? { BATCHER_BROWSER_ENGINE: options.browserEngine || config.browserEngine, ...(await getKiroProUpgradeEnv(account.id)) }
+      : {};
+
+    const proxyUrlForAuth = (await getNextProxy())?.url || "";
+
     const proc = Bun.spawn(
       [
         config.pythonPath,
@@ -294,25 +373,25 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
         stderr: "pipe",
         env: {
           ...process.env,
-          // Only login the specific provider we need
-          // kiro-pro uses same bot as kiro
-          ENOWX_ALLOWED_PROVIDERS: provider === "kiro-pro" ? "kiro" : provider,
-          // Ensure Python progress JSON is flushed line-by-line for live dashboard logs
+          ENOWX_ALLOWED_PROVIDERS: provider,
           PYTHONUNBUFFERED: "1",
-          // Enable camoufox browser automation
           BATCHER_ENABLE_CAMOUFOX: "true",
           BATCHER_CAMOUFOX_HEADLESS: headless ? "true" : "false",
-          // Proxy configuration
-          BATCHER_PROXY_URL: config.proxyUrl || "",
-          HTTP_PROXY: config.proxyUrl || "",
-          HTTPS_PROXY: config.proxyUrl || "",
-          // Run single provider at a time
+          DISPLAY: process.env.DISPLAY || ":0",
+          WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY || "",
+          XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || "",
+          BATCHER_PROXY_URL: proxyUrlForAuth || config.proxyUrl || "",
+          HTTP_PROXY: proxyUrlForAuth || config.proxyUrl || "",
+          HTTPS_PROXY: proxyUrlForAuth || config.proxyUrl || "",
           BATCHER_CONCURRENT: "1",
           BATCHER_PRIORITY: provider,
+          ...kiroProEnv,
         },
         cwd: config.authScriptCwd,
       }
     );
+
+    activeProcesses.set(account.id, proc);
 
     const streamedEvents: ScriptEvent[] = [];
     const stdoutPromise = readTextStream(proc.stdout, (line) => {
@@ -338,7 +417,10 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
       }
     });
     const stderrPromise = new Response(proc.stderr).text();
-    const exitCode = await waitForProcessExit(proc);
+    const timeoutMs = (provider === "kiro-pro" && config.kiroProUpgrade)
+      ? Math.max(config.authProcessTimeoutMs, 15 * 60 * 1000)
+      : config.authProcessTimeoutMs;
+    const exitCode = await waitForProcessExit(proc, timeoutMs);
     const [stdoutResult, stderrResult] = await Promise.allSettled([stdoutPromise, stderrPromise]);
     const stdout = stdoutResult.status === "fulfilled" ? stdoutResult.value : "";
     const stderr = stderrResult.status === "fulfilled" ? stderrResult.value : String(stderrResult.reason || "");
@@ -393,9 +475,7 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
     }
 
     // Get the specific provider's result
-    // kiro-pro uses same bot as kiro, so look up "kiro" result
-    const resultKey = provider === "kiro-pro" ? "kiro" : provider;
-    const providerResult = result[resultKey] as ProviderResult | undefined;
+    const providerResult = result[provider] as ProviderResult | undefined;
     if (!providerResult) {
       const errorMsg = `Provider ${provider} not found in result`;
       await markAccountError(account.id, errorMsg);
@@ -423,6 +503,52 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
     // Success! Store credentials and quota
     const credentials = providerResult.credentials || {};
     const quota = providerResult.quota || {};
+
+    // Kiro Pro: upgrade must succeed before marking active
+    if (provider === "kiro-pro" && config.kiroProUpgrade) {
+      const upgradeResult = (providerResult as any).upgrade as
+        | { upgrade_success: boolean; upgrade_error?: string; card_last4?: string; quota?: Record<string, unknown> }
+        | null
+        | undefined;
+
+      if (!upgradeResult || !upgradeResult.upgrade_success) {
+        const upgradeError = upgradeResult?.upgrade_error || "upgrade_not_attempted";
+        await db
+          .update(accounts)
+          .set({
+            status: "error",
+            tokens: credentials as unknown,
+            errorMessage: `Login OK but upgrade failed: ${upgradeError}`,
+            lastLoginAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(accounts.id, account.id));
+
+        if (upgradeResult?.card_last4) {
+          const cardStatus = upgradeError.includes("declined") ? "declined" as const : "error" as const;
+          await handleCardResult(account.id, upgradeResult.card_last4, cardStatus);
+        }
+
+        const log = addAuthLog({
+          type: "login_failed",
+          accountId: account.id,
+          email: account.email,
+          provider,
+          error: `Upgrade failed: ${upgradeError}`,
+          message: `Upgrade failed: ${upgradeError}`,
+        });
+        broadcast({
+          type: "login_failed",
+          data: { logId: log.id, id: account.id, email: account.email, provider, error: `Upgrade failed: ${upgradeError}` },
+        });
+        return { success: false, error: `Upgrade failed: ${upgradeError}`, noRetry: true };
+      }
+
+      // Upgrade succeeded — update card status
+      if (upgradeResult.card_last4) {
+        await handleCardResult(account.id, upgradeResult.card_last4, "success");
+      }
+    }
 
     let { limit: quotaLimit, remaining: quotaRemaining } = parseQuota(quota);
     let quotaMetadata: Record<string, unknown> = quota;
@@ -482,6 +608,25 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
     return { success: true, tokens: credentials, quota };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
+
+    // If manually stopped, don't retry
+    if (manuallyStoppedIds.has(account.id)) {
+      manuallyStoppedIds.delete(account.id);
+      const log = addAuthLog({
+        type: "login_failed",
+        accountId: account.id,
+        email: account.email,
+        provider,
+        error: "Stopped by user",
+        message: "Stopped by user",
+      });
+      broadcast({
+        type: "login_failed",
+        data: { logId: log.id, id: account.id, email: account.email, provider, error: "Stopped by user" },
+      });
+      return { success: false, error: "Stopped by user", noRetry: true };
+    }
+
     await markAccountError(account.id, errorMsg);
     const log = addAuthLog({
       type: "login_failed",
@@ -495,7 +640,19 @@ export async function loginAccount(account: Account, options: LoginOptions = {})
       type: "login_failed",
       data: { logId: log.id, id: account.id, email: account.email, provider, error: errorMsg },
     });
+
+    // For kiro-pro: if we already passed login phase (upgrade/payment steps), don't retry
+    const isKiroProUpgrade = provider === "kiro-pro" && config.kiroProUpgrade;
+    const reachedUpgradeStep = streamedEvents.some((e) =>
+      e.type === "progress" && /upgrade|payment|billing|card|stripe|checkout/i.test((e as any).step || (e as any).message || "")
+    );
+    if (isKiroProUpgrade && reachedUpgradeStep) {
+      return { success: false, error: errorMsg, noRetry: true };
+    }
+
     return { success: false, error: errorMsg };
+  } finally {
+    activeProcesses.delete(account.id);
   }
 }
 
@@ -509,6 +666,8 @@ export async function loginAllProviders(
   password: string
 ): Promise<Record<string, LoginResult>> {
   try {
+    const proxyUrlForAuth = (await getNextProxy())?.url || "";
+
     const proc = Bun.spawn(
       [
         config.pythonPath,
@@ -523,12 +682,12 @@ export async function loginAllProviders(
         stderr: "pipe",
         env: {
           ...process.env,
-          ENOWX_ALLOWED_PROVIDERS: "kiro,codebuddy,canva,zai,windsurf,moclaw",
+          ENOWX_ALLOWED_PROVIDERS: "kiro,kiro-pro,codebuddy,canva,zai,windsurf,moclaw",
           BATCHER_ENABLE_CAMOUFOX: "true",
           BATCHER_CAMOUFOX_HEADLESS: config.headless ? "true" : "false",
-          BATCHER_PROXY_URL: config.proxyUrl || "",
-          HTTP_PROXY: config.proxyUrl || "",
-          HTTPS_PROXY: config.proxyUrl || "",
+          BATCHER_PROXY_URL: proxyUrlForAuth || config.proxyUrl || "",
+          HTTP_PROXY: proxyUrlForAuth || config.proxyUrl || "",
+          HTTPS_PROXY: proxyUrlForAuth || config.proxyUrl || "",
           BATCHER_CONCURRENT: "5",
         },
         cwd: config.authScriptCwd,
@@ -549,6 +708,7 @@ export async function loginAllProviders(
       const error = stderr.trim() || `No result${exitCode !== 0 ? ` (exit ${exitCode})` : ""}`;
       return {
         kiro: { success: false, error },
+        "kiro-pro": { success: false, error },
         codebuddy: { success: false, error },
         canva: { success: false, error },
         zai: { success: false, error },
@@ -559,7 +719,7 @@ export async function loginAllProviders(
 
     const output: Record<string, LoginResult> = {};
 
-    for (const provider of ["kiro", "codebuddy", "canva", "zai", "windsurf", "moclaw"] as const) {
+    for (const provider of ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"] as const) {
       const pr = result[provider] as ProviderResult | undefined;
       if (!pr || !pr.success) {
         output[provider] = {
@@ -580,6 +740,7 @@ export async function loginAllProviders(
     const errorMsg = error instanceof Error ? error.message : String(error);
     return {
       kiro: { success: false, error: errorMsg },
+      "kiro-pro": { success: false, error: errorMsg },
       codebuddy: { success: false, error: errorMsg },
       canva: { success: false, error: errorMsg },
       zai: { success: false, error: errorMsg },

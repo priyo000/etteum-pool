@@ -9,6 +9,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.providers.kiro import KiroProviderAdapter
+from app.providers.kiro_pro import KiroProProviderAdapter
 from app.providers.codebuddy import CodeBuddyProviderAdapter
 from app.providers.wavespeed import WavespeedProviderAdapter
 from app.providers.canva import CanvaProviderAdapter
@@ -136,12 +137,33 @@ async def _run_provider_once(adapter, account: NormalizedAccount) -> dict:
                 except Exception:
                     pass
 
-        return {
+        # Post-login hook (e.g., kiro-pro auto-upgrade)
+        upgrade_result = None
+        if hasattr(adapter, "post_login_hook"):
+            try:
+                upgrade_result = await adapter.post_login_hook(account, tokens, session, quota)
+            except Exception as e:
+                emit(
+                    {
+                        "type": "progress",
+                        "provider": provider_name,
+                        "step": "upgrade_error",
+                        "message": str(e),
+                    }
+                )
+                upgrade_result = {"upgrade_success": False, "upgrade_error": str(e)}
+
+        result = {
             "success": True,
             "provider": provider_name,
             "credentials": tokens,
             "quota": quota,
         }
+        if upgrade_result is not None:
+            result["upgrade"] = upgrade_result
+            if upgrade_result.get("quota"):
+                result["quota"] = upgrade_result["quota"]
+        return result
     finally:
         if session is not None:
             try:
@@ -295,17 +317,18 @@ async def main(email: str, password: str):
             "zai": (ZaiProviderAdapter(), NormalizedAccount(provider="zai", identifier=email, secret=password)),
             "windsurf": (WindsurfProviderAdapter(), NormalizedAccount(provider="windsurf", identifier=email, secret=password)),
             "moclaw": (MoclawProviderAdapter(), NormalizedAccount(provider="moclaw", identifier=email, secret=password)),
+            "kiro-pro": (KiroProProviderAdapter(), NormalizedAccount(provider="kiro-pro", identifier=email, secret=password)),
         }
         tasks = []
         task_names = []
-        for name in ["kiro", "codebuddy", "canva", "zai", "windsurf", "moclaw"]:
+        for name in ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"]:
             if name in allowed_providers:
                 adapter, account = provider_specs[name]
                 tasks.append(run_provider(adapter, account))
                 task_names.append(name)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         result = {"type": "result"}
-        for name in ["kiro", "codebuddy", "wavespeed", "canva", "yepapi", "zai", "windsurf", "moclaw"]:
+        for name in ["kiro", "kiro-pro", "codebuddy", "wavespeed", "canva", "yepapi", "zai", "windsurf", "moclaw"]:
             result[name] = {"success": False, "provider": name, "error": "skipped"}
         for name, provider_result in zip(task_names, results):
             if isinstance(provider_result, BaseException):

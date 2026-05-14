@@ -240,7 +240,7 @@ statsRouter.get("/models", async (c) => {
     .where(whereExpr)
     .groupBy(usageSummary.provider, usageSummary.model)
     .having(sql`COALESCE(SUM(total_tokens), 0) > 0 OR COALESCE(SUM(credits_used), 0) > 0`)
-    .orderBy(sql`COALESCE(SUM(credits_used), 0) DESC`);
+    .orderBy(sql`COALESCE(SUM(total_tokens), 0) DESC`);
 
   const data = modelStats.map((row) => {
     const meta = modelMeta.get(row.model || "");

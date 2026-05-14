@@ -136,6 +136,13 @@ function estimateTokensFromText(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
+function estimateMessagesTokens(messages: ChatCompletionRequest["messages"]): number {
+  return (messages || []).reduce((total, msg) => {
+    const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
+    return total + estimateTokensFromText(content) + 4;
+  }, 0);
+}
+
 function isJsonParseError(error: unknown): boolean {
   return error instanceof SyntaxError ||
     (error instanceof Error && /json|parse|unexpected end|unexpected token/i.test(error.message));
@@ -332,7 +339,7 @@ async function handleChatCompletion(body: ChatCompletionRequest) {
   let shouldReleaseTracking = true;
 
   try {
-    const promptTokens = result.promptTokens || result.response?.usage?.prompt_tokens || 0;
+    const promptTokens = result.promptTokens || result.response?.usage?.prompt_tokens || estimateMessagesTokens(body.messages);
     const completionTokens = result.completionTokens || result.response?.usage?.completion_tokens || 0;
     const totalTokens = result.tokensUsed || result.response?.usage?.total_tokens || promptTokens + completionTokens;
 

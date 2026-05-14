@@ -64,6 +64,9 @@ do_stop() {
 
   local pid=$(cat "$PID_FILE")
   echo "Stopping PoolProx (PID $pid)..."
+
+  # Kill entire process group (parent + children)
+  pkill -P "$pid" 2>/dev/null
   kill "$pid" 2>/dev/null
 
   local i=0
@@ -73,6 +76,7 @@ do_stop() {
   done
 
   if kill -0 "$pid" 2>/dev/null; then
+    pkill -9 -P "$pid" 2>/dev/null
     kill -9 "$pid" 2>/dev/null
   fi
 

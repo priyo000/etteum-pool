@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Save, RefreshCw, Server, Zap, Activity } from "lucide-react";
+import { Save, RefreshCw, Server, Zap, Activity, CreditCard } from "lucide-react";
 import {
   fetchSettings,
   updateSettings,
@@ -321,6 +321,103 @@ export default function Settings() {
                   <option value="warn">Warning</option>
                   <option value="error">Error</option>
                 </select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-[var(--border)]">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-[var(--primary)]" />
+                Kiro Pro Auto-Upgrade
+              </CardTitle>
+              <CardDescription>
+                Automatically upgrade kiro-pro accounts to Pro tier after login using VCC pool cards.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--secondary)]/40 border border-[var(--border)]">
+                <div>
+                  <p className="text-sm font-medium text-[var(--foreground)]">Enable Auto-Upgrade</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    When enabled, kiro-pro accounts will auto-upgrade to Pro after login (requires VCC cards in pool)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setValue("kiro_pro_upgrade", form.kiro_pro_upgrade === "true" ? "false" : "true")}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    form.kiro_pro_upgrade === "true" ? "bg-[var(--primary)]" : "bg-[var(--border)]"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      form.kiro_pro_upgrade === "true" ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-[var(--foreground)]">Billing Address</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-[var(--muted-foreground)]">Name</label>
+                    <Input
+                      value={form.billing_name || ""}
+                      onChange={(e) => setValue("billing_name", e.target.value)}
+                      placeholder="John Doe"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[var(--muted-foreground)]">Country</label>
+                    <Input
+                      value={form.billing_country || ""}
+                      onChange={(e) => setValue("billing_country", e.target.value)}
+                      placeholder="US"
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--muted-foreground)]">Address Line 1</label>
+                  <Input
+                    value={form.billing_line1 || ""}
+                    onChange={(e) => setValue("billing_line1", e.target.value)}
+                    placeholder="123 Main St"
+                    className="mt-1"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-[var(--muted-foreground)]">City</label>
+                    <Input
+                      value={form.billing_city || ""}
+                      onChange={(e) => setValue("billing_city", e.target.value)}
+                      placeholder="New York"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[var(--muted-foreground)]">State</label>
+                    <Input
+                      value={form.billing_state || ""}
+                      onChange={(e) => setValue("billing_state", e.target.value)}
+                      placeholder="NY"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[var(--muted-foreground)]">Postal Code</label>
+                    <Input
+                      value={form.billing_postal_code || ""}
+                      onChange={(e) => setValue("billing_postal_code", e.target.value)}
+                      placeholder="10001"
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

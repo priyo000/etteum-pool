@@ -54,11 +54,13 @@ accountsRouter.get("/:id", async (c) => {
  */
 accountsRouter.post("/", async (c) => {
   const body = await c.req.json<{
-    provider: "kiro" | "codebuddy" | "canva" | "zai" | "moclaw";
+    provider: "kiro" | "kiro-pro" | "codebuddy" | "canva" | "zai" | "moclaw";
     email: string;
     password: string;
     tokens?: Record<string, unknown>;
     status?: "active" | "pending";
+    browserEngine?: string;
+    headless?: boolean;
   }>();
 
   if (!body.provider || !body.email || !body.password) {
@@ -89,7 +91,7 @@ accountsRouter.post("/", async (c) => {
     });
 
     // Immediately queue bot login after adding account from dashboard/API.
-    loginQueue.enqueue(created.id);
+    loginQueue.enqueue(created.id, { browserEngine: body.browserEngine, headless: body.headless });
 
     return c.json(
       { ...created, password: "***", tokens: created.tokens ? "[set]" : null, loginQueued: true },

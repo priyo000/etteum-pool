@@ -11,6 +11,7 @@ interface QueueItem {
   accountId: number;
   retries: number;
   headless?: boolean;
+  browserEngine?: string;
   generation: number;
 }
 
@@ -36,12 +37,12 @@ class LoginQueue {
   /**
    * Add an account to the login queue
    */
-  enqueue(accountId: number, options: { headless?: boolean } = {}): void {
+  enqueue(accountId: number, options: { headless?: boolean; browserEngine?: string } = {}): void {
     // Avoid duplicates
     if (this.hasPendingOrActive(accountId)) {
       return;
     }
-    this.queue.push({ accountId, retries: 0, headless: options.headless, generation: this.clearGeneration });
+    this.queue.push({ accountId, retries: 0, headless: options.headless, browserEngine: options.browserEngine, generation: this.clearGeneration });
     const log = addAuthLog({
       type: "queue_added",
       accountId,
@@ -54,7 +55,7 @@ class LoginQueue {
   /**
    * Add multiple accounts to the queue
    */
-  enqueueBulk(accountIds: number[], options: { headless?: boolean } = {}): void {
+  enqueueBulk(accountIds: number[], options: { headless?: boolean; browserEngine?: string } = {}): void {
     for (const id of accountIds) {
       this.enqueue(id, options);
     }
@@ -63,7 +64,7 @@ class LoginQueue {
   /**
    * Queue all pending accounts for login
    */
-  async queueAllPending(options: { headless?: boolean } = {}): Promise<number> {
+  async queueAllPending(options: { headless?: boolean; browserEngine?: string } = {}): Promise<number> {
     const pendingAccounts = await db
       .select()
       .from(accounts)
@@ -81,7 +82,7 @@ class LoginQueue {
    * Input: array of { email, password, providers }
    * This handles the case where one email is used across multiple providers.
    */
-  async bulkAdd(items: BulkAddItem[], options: { headless?: boolean; concurrency?: number } = {}): Promise<{ created: number; queued: number }> {
+  async bulkAdd(items: BulkAddItem[], options: { headless?: boolean; concurrency?: number; browserEngine?: string } = {}): Promise<{ created: number; queued: number }> {
     let created = 0;
     const accountIds: number[] = [];
 
@@ -114,7 +115,7 @@ class LoginQueue {
     if (options.concurrency !== undefined) this.setConcurrency(options.concurrency);
 
     // Queue all created accounts for login
-    this.enqueueBulk(accountIds, { headless: options.headless });
+    this.enqueueBulk(accountIds, { headless: options.headless, browserEngine: options.browserEngine });
 
     return { created, queued: accountIds.length };
   }
@@ -180,6 +181,11 @@ class LoginQueue {
         this.activeJobs--;
         this.activeAccountIds.delete(item.accountId);
         this.totalProcessed++;
+        // Don't continue if this item's generation is stale (queue was cleared)
+        if (item.generation !== this.clearGeneration) {
+          if (this.activeJobs === 0) this.processing = false;
+          return;
+        }
         // Continue processing
         if (this.queue.length > 0) {
           this.process();
@@ -205,12 +211,15 @@ class LoginQueue {
   }
 
   private async processItem(item: QueueItem): Promise<void> {
+    if (item.generation !== this.clearGeneration) return;
+
     const [account] = await db
       .select()
       .from(accounts)
       .where(eq(accounts.id, item.accountId));
 
     if (!account) return;
+    if (item.generation !== this.clearGeneration) return;
 
     const processingLog = addAuthLog({
       type: "queue_processing",
@@ -233,12 +242,15 @@ class LoginQueue {
       },
     });
 
-    const result = await loginAccount(account, { headless: item.headless });
+    const result = await loginAccount(account, { headless: item.headless, browserEngine: item.browserEngine });
 
     if (result.success) {
       this.totalSuccess++;
     } else {
-      if (item.retries < this.maxRetries) {
+      // Don't retry if explicitly marked (e.g. kiro-pro upgrade failed but login succeeded)
+      if ((result as any).noRetry) {
+        this.totalFailed++;
+      } else if (item.retries < this.maxRetries) {
         // Re-queue with incremented retry count and delay
         if (item.generation !== this.clearGeneration) return;
         const retryGeneration = item.generation;
@@ -250,7 +262,7 @@ class LoginQueue {
             this.process();
             return;
           }
-          this.queue.push({ accountId: item.accountId, retries: item.retries + 1, headless: item.headless, generation: retryGeneration });
+          this.queue.push({ accountId: item.accountId, retries: item.retries + 1, headless: item.headless, browserEngine: item.browserEngine, generation: retryGeneration });
           this.process();
         }, Math.min(2000 * Math.pow(2, item.retries), 15000)); // exponential backoff
         if (retryGeneration === this.clearGeneration) this.retryTimers.set(item.accountId, timer);

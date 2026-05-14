@@ -230,7 +230,9 @@ class AccountPool {
     // === KIRO PRO (Opus models) ===
     if (m.startsWith("kp-")) return "kiro-pro";
     if (m === "claude-opus-4.7") return "kiro-pro";
+    if (m === "claude-opus-4.7-thinking") return "kiro-pro";
     if (m === "claude-opus-4.6") return "kiro-pro";
+    if (m === "claude-opus-4.6-thinking") return "kiro-pro";
     if (m === "claude-opus-4.5") return "kiro-pro";
 
     // === CODEBUDDY (MAX tier) ===

@@ -170,7 +170,7 @@ export async function fetchProviderList(): Promise<{ data: string[] }> {
   return fetchApi("/api/settings/providers");
 }
 
-export async function createAccount(account: { provider: string; email: string; password: string }) {
+export async function createAccount(account: { provider: string; email: string; password: string; browserEngine?: string; headless?: boolean }) {
   return fetchApi("/api/accounts", {
     method: "POST",
     body: JSON.stringify(account),
@@ -202,7 +202,15 @@ export async function loginAllAccounts(options?: { headless?: boolean }) {
   });
 }
 
-export async function importAccounts(text: string, providers: string[], options?: { headless?: boolean; concurrency?: number }) {
+export async function stopAccount(id: number) {
+  return fetchApi(`/api/auth/stop/${id}`, { method: "POST" });
+}
+
+export async function stopAllAccounts() {
+  return fetchApi("/api/auth/stop-all", { method: "POST" });
+}
+
+export async function importAccounts(text: string, providers: string[], options?: { headless?: boolean; concurrency?: number; browserEngine?: string }) {
   return fetchApi("/api/auth/import", {
     method: "POST",
     body: JSON.stringify({ text, providers, ...(options || {}) }),
@@ -241,4 +249,39 @@ export async function testApiKey(key: string) {
     method: "POST",
     body: JSON.stringify({ key }),
   });
+}
+
+// Proxy Pool
+export async function fetchProxyPool() {
+  return fetchApi("/api/proxy-pool/pool");
+}
+
+export async function addProxies(proxies: string[]) {
+  return fetchApi("/api/proxy-pool/pool", {
+    method: "POST",
+    body: JSON.stringify({ proxies }),
+  });
+}
+
+export async function updateProxy(id: number, data: { status?: string; label?: string }) {
+  return fetchApi(`/api/proxy-pool/pool/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProxy(id: number) {
+  return fetchApi(`/api/proxy-pool/pool/${id}`, { method: "DELETE" });
+}
+
+export async function clearProxyPool() {
+  return fetchApi("/api/proxy-pool/pool", { method: "DELETE" });
+}
+
+export async function checkProxy(id: number) {
+  return fetchApi(`/api/proxy-pool/pool/${id}/check`, { method: "POST" });
+}
+
+export async function checkAllProxies() {
+  return fetchApi("/api/proxy-pool/pool/check-all", { method: "POST" });
 }
