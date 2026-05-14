@@ -15,6 +15,7 @@ import { Plus, RefreshCw, Play, RotateCcw } from "lucide-react";
 import {
   createAccount,
   fetchAccounts,
+  fetchApi,
   fetchAuthQueue,
   fetchWarmupQueue,
   loginAccounts,
