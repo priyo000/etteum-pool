@@ -24,6 +24,7 @@ MAX_RETRIES = 3
 BASE_DELAY = 2.0
 MAX_DELAY = 15.0
 PROVIDER_TIMEOUT = 180
+KIRO_PRO_TIMEOUT = 600  # 10 minutes for kiro-pro (upgrade + payment takes longer)
 
 
 def emit(data: dict):
@@ -187,11 +188,27 @@ async def run_provider(adapter, account: NormalizedAccount) -> dict:
 
     for attempt in range(MAX_RETRIES):
         try:
+            timeout = KIRO_PRO_TIMEOUT if provider_name == "kiro-pro" else PROVIDER_TIMEOUT
             return await asyncio.wait_for(
-                _run_provider_once(adapter, account), timeout=PROVIDER_TIMEOUT
+                _run_provider_once(adapter, account), timeout=timeout
             )
         except asyncio.TimeoutError:
-            last_error = TimeoutError(f"provider timed out after {PROVIDER_TIMEOUT}s")
+            last_error = TimeoutError(f"provider timed out after {timeout}s")
+            # For kiro-pro: don't retry on timeout — upgrade/payment phase is long-running
+            # and retrying would restart from login which wastes time
+            if provider_name == "kiro-pro":
+                emit(
+                    {
+                        "type": "error",
+                        "provider": provider_name,
+                        "error": f"timed out after {timeout}s (no retry for kiro-pro upgrade)",
+                    }
+                )
+                return {
+                    "success": False,
+                    "provider": provider_name,
+                    "error": f"timed out after {timeout}s",
+                }
             if attempt < MAX_RETRIES - 1:
                 delay = retry_delay(attempt)
                 emit(
@@ -199,7 +216,7 @@ async def run_provider(adapter, account: NormalizedAccount) -> dict:
                         "type": "progress",
                         "provider": provider_name,
                         "step": "retry",
-                        "message": f"Timeout after {PROVIDER_TIMEOUT}s — retrying in {delay:.0f}s (attempt {attempt + 2}/{MAX_RETRIES})",
+                        "message": f"Timeout after {timeout}s — retrying in {delay:.0f}s (attempt {attempt + 2}/{MAX_RETRIES})",
                     }
                 )
                 await asyncio.sleep(delay)
