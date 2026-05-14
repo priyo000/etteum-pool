@@ -111,12 +111,13 @@ accountsRouter.post("/", async (c) => {
 /**
  * POST /api/accounts/instant-login - Kiro Pro instant login via refresh token (bulk)
  * No browser needed — just exchange refresh token for access token
+ * Body: { tokens: ["refreshToken1", "refreshToken2", ...] }
  */
 accountsRouter.post("/instant-login", async (c) => {
-  const body = await c.req.json<{ tokens: Array<{ email: string; refreshToken: string }> }>();
+  const body = await c.req.json<{ tokens: string[] }>();
 
   if (!body.tokens || !Array.isArray(body.tokens) || body.tokens.length === 0) {
-    return c.json({ error: "tokens array is required (each item: { email, refreshToken })" }, 400);
+    return c.json({ error: "tokens array is required (array of refresh token strings)" }, 400);
   }
 
   const REFRESH_URL = "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken";
@@ -124,22 +125,19 @@ accountsRouter.post("/instant-login", async (c) => {
   let failed = 0;
   const errors: string[] = [];
 
-  for (const item of body.tokens) {
-    if (!item.email || !item.refreshToken) {
-      errors.push(`Missing email or refreshToken`);
-      failed++;
-      continue;
-    }
+  for (const refreshToken of body.tokens) {
+    const trimmed = refreshToken.trim();
+    if (!trimmed) { failed++; continue; }
 
     try {
       const response = await fetch(REFRESH_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: item.refreshToken }),
+        body: JSON.stringify({ refreshToken: trimmed }),
       });
 
       if (!response.ok) {
-        errors.push(`${item.email}: refresh failed (${response.status})`);
+        errors.push(`token ...${trimmed.slice(-8)}: refresh failed (${response.status})`);
         failed++;
         continue;
       }
@@ -151,20 +149,31 @@ accountsRouter.post("/instant-login", async (c) => {
       };
 
       if (!data.accessToken) {
-        errors.push(`${item.email}: no access token received`);
+        errors.push(`token ...${trimmed.slice(-8)}: no access token received`);
         failed++;
         continue;
       }
 
+      // Extract email from JWT payload (access token is a JWT)
+      let email = `kiro-pro-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@instant`;
+      try {
+        const parts = data.accessToken!.split(".");
+        if (parts[1]) {
+          const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+          if (payload.email) email = payload.email;
+          else if (payload.sub) email = payload.sub;
+        }
+      } catch {}
+
       const tokens = {
         access_token: data.accessToken,
-        refresh_token: data.refreshToken || item.refreshToken,
+        refresh_token: data.refreshToken || trimmed,
         expires_at: data.expiresAt || null,
       };
 
       // Create or update account as active with tokens
       const existing = await db.select().from(accounts)
-        .where(eq(accounts.email, item.email))
+        .where(eq(accounts.email, email))
         .then((rows) => rows.find((r) => r.provider === "kiro-pro"));
 
       if (existing) {
@@ -178,7 +187,7 @@ accountsRouter.post("/instant-login", async (c) => {
       } else {
         await db.insert(accounts).values({
           provider: "kiro-pro",
-          email: item.email,
+          email,
           password: encrypt("instant-login"),
           status: "active",
           tokens: tokens as unknown,
@@ -187,7 +196,7 @@ accountsRouter.post("/instant-login", async (c) => {
       }
       success++;
     } catch (err) {
-      errors.push(`${item.email}: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(`token ...${trimmed.slice(-8)}: ${err instanceof Error ? err.message : String(err)}`);
       failed++;
     }
   }

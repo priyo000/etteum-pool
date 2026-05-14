@@ -11,13 +11,14 @@ import {
   DialogTitle as DTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Plus, RefreshCw, Play, RotateCcw } from "lucide-react";
+import { Plus, Upload, RefreshCw, Play, RotateCcw } from "lucide-react";
 import {
   createAccount,
   fetchAccounts,
   fetchApi,
   fetchAuthQueue,
   fetchWarmupQueue,
+  importAccounts,
   loginAccounts,
   loginAllAccounts,
   warmupAllAccounts,
@@ -56,7 +57,10 @@ export default function Accounts() {
   const [addForm, setAddForm] = useState({ email: "", password: "", provider: "kiro" as Provider, browserEngine: "camoufox", headless: false });
   const [addDialogProvider, setAddDialogProvider] = useState<Provider | null>(null);
   const [instantTokens, setInstantTokens] = useState("");
-  const [addMode, setAddMode] = useState<"browser" | "instant">("browser");
+  const [bulkText, setBulkText] = useState("");
+  const [addMode, setAddMode] = useState<"single" | "bulk" | "instant">("bulk");
+  const [bulkBrowserEngine, setBulkBrowserEngine] = useState("camoufox");
+  const [bulkHeadless, setBulkHeadless] = useState(true);
   const messageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingRef = useRef(false);
 
@@ -117,15 +121,9 @@ export default function Accounts() {
   }
 
   async function handleInstantLogin() {
-    if (!instantTokens.trim()) { showError(new Error("Paste email|refreshToken lines")); return; }
-    const lines = instantTokens.trim().split("\n").filter((l) => l.trim());
-    const tokens = lines.map((line) => {
-      const parts = line.split("|").map((p) => p.trim());
-      if (parts.length >= 2) return { email: parts[0], refreshToken: parts[1] };
-      return null;
-    }).filter(Boolean) as Array<{ email: string; refreshToken: string }>;
-
-    if (tokens.length === 0) { showError(new Error("No valid lines. Format: email|refreshToken")); return; }
+    if (!instantTokens.trim()) { showError(new Error("Paste refresh tokens (one per line)")); return; }
+    const tokens = instantTokens.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+    if (tokens.length === 0) { showError(new Error("No valid tokens found")); return; }
 
     try {
       const res = await fetchApi<{ success: number; failed: number; errors?: string[] }>("/api/accounts/instant-login", {
@@ -136,6 +134,19 @@ export default function Accounts() {
       setInstantTokens("");
       setAddDialogProvider(null);
       await load();
+    } catch (err) { showError(err); }
+  }
+
+  async function handleBulkImport() {
+    if (!addDialogProvider || !bulkText.trim()) { showError(new Error("Paste email|password lines")); return; }
+    try {
+      const opts: any = { headless: bulkHeadless, browserEngine: bulkBrowserEngine };
+      const res = await importAccounts(bulkText, [addDialogProvider], opts) as any;
+      showSuccess(res.message || "Bulk import queued.");
+      setBulkText("");
+      setAddDialogProvider(null);
+      await load();
+      navigate("/bot-logs");
     } catch (err) { showError(err); }
   }
 
@@ -271,40 +282,82 @@ export default function Accounts() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Mode tabs for Kiro Pro */}
-          {addDialogProvider === "kiro-pro" && (
+          {/* Mode tabs */}
+          {addDialogProvider === "kiro-pro" ? (
             <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
-              <button
-                onClick={() => setAddMode("instant")}
+              <button onClick={() => setAddMode("instant")}
                 className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "instant" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
               >Instant Login (Token)</button>
-              <button
-                onClick={() => setAddMode("browser")}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "browser" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
-              >Browser Login</button>
+              <button onClick={() => setAddMode("bulk")}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "bulk" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+              >Bulk (Email|Pass)</button>
+              <button onClick={() => setAddMode("single")}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "single" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+              >Single</button>
+            </div>
+          ) : (
+            <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
+              <button onClick={() => setAddMode("bulk")}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "bulk" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+              >Bulk (Email|Pass)</button>
+              <button onClick={() => setAddMode("single")}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "single" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+              >Single</button>
             </div>
           )}
 
           {/* Instant Login mode (Kiro Pro only) */}
-          {addDialogProvider === "kiro-pro" && addMode === "instant" ? (
+          {addMode === "instant" && addDialogProvider === "kiro-pro" && (
             <div className="space-y-4">
               <div>
-                <label className="text-sm text-[var(--foreground)]">Refresh Tokens (bulk)</label>
+                <label className="text-sm text-[var(--foreground)]">Refresh Tokens (satu per baris)</label>
                 <textarea
                   value={instantTokens}
                   onChange={(e) => setInstantTokens(e.target.value)}
                   className="mt-1 w-full h-40 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
-                  placeholder={"email@example.com|eyJhbGciOiJSUzI1NiIs...\nanother@example.com|eyJhbGciOiJSUzI1NiIs..."}
+                  placeholder={"eyJhbGciOiJSUzI1NiIs...\neyJhbGciOiJSUzI1NiIs...\neyJhbGciOiJSUzI1NiIs..."}
                 />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Format: email|refreshToken (satu per baris)</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Paste refresh token per baris. Email otomatis di-extract dari token.</p>
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setAddDialogProvider(null)}>Cancel</Button>
                 <Button onClick={handleInstantLogin}>Login Instant</Button>
               </div>
             </div>
-          ) : (
-            /* Browser Login mode (all providers) */
+          )}
+
+          {/* Bulk mode (all providers) */}
+          {addMode === "bulk" && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-[var(--foreground)]">Accounts (email|password per baris)</label>
+                <textarea
+                  value={bulkText}
+                  onChange={(e) => setBulkText(e.target.value)}
+                  className="mt-1 w-full h-40 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
+                  placeholder={"email@example.com|password123\nanother@example.com|pass456"}
+                />
+              </div>
+              <div>
+                <label className="text-sm text-[var(--foreground)]">Browser Engine</label>
+                <select value={bulkBrowserEngine} onChange={(e) => setBulkBrowserEngine(e.target.value)} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
+                  <option value="camoufox">Camoufox (Anti-detect, default)</option>
+                  <option value="chromium">Chromium (Playwright)</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+                <input type="checkbox" checked={bulkHeadless} onChange={(e) => setBulkHeadless(e.target.checked)} className="h-4 w-4 rounded border-[var(--border)]" />
+                Run browser headless
+              </label>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setAddDialogProvider(null)}>Cancel</Button>
+                <Button onClick={handleBulkImport}>Import & Login</Button>
+              </div>
+            </div>
+          )}
+
+          {/* Single mode (all providers) */}
+          {addMode === "single" && (
             <div className="space-y-4">
               <div>
                 <label className="text-sm text-[var(--foreground)]">Email</label>
