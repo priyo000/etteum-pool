@@ -2,7 +2,19 @@
 # poolprox - PoolProx2 management CLI
 # Usage: poolprox [start|stop|restart|status|logs|update|port|build]
 
-PROJECT_DIR="/home/priyo/dev/OpenProject/poolprox2"
+# Auto-detect project directory: env override > $POOLPROX_HOME > script's resolved dir
+if [ -n "$POOLPROX_HOME" ] && [ -d "$POOLPROX_HOME" ]; then
+  PROJECT_DIR="$POOLPROX_HOME"
+else
+  SCRIPT_PATH="${BASH_SOURCE[0]}"
+  while [ -L "$SCRIPT_PATH" ]; do
+    SCRIPT_DIR=$(cd -P "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd)
+    SCRIPT_PATH=$(readlink "$SCRIPT_PATH")
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+  done
+  PROJECT_DIR=$(cd -P "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd)
+fi
+
 PID_FILE="$PROJECT_DIR/.poolprox.pid"
 LOG_FILE="$PROJECT_DIR/.poolprox.log"
 ENV_FILE="$PROJECT_DIR/.env"

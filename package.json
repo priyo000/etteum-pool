@@ -2,7 +2,15 @@
   "name": "poolprox2",
   "version": "1.0.0",
   "type": "module",
-  "scripts": {},
+  "scripts": {
+    "start": "bun scripts/production.ts",
+    "start:fast": "bun scripts/production.ts --skip-build",
+    "dev": "bun scripts/start.ts",
+    "build": "cd dashboard && bun run build",
+    "migrate": "bun src/db/migrate.ts",
+    "setup": "bash install.sh",
+    "setup:win": "powershell -ExecutionPolicy Bypass -File install.ps1"
+  },
   "dependencies": {
     "playwright": "^1.40.0"
   },
