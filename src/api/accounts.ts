@@ -54,7 +54,7 @@ accountsRouter.get("/:id", async (c) => {
  */
 accountsRouter.post("/", async (c) => {
   const body = await c.req.json<{
-    provider: "kiro" | "kiro-pro" | "codebuddy" | "canva" | "zai" | "moclaw";
+    provider: "kiro" | "kiro-pro" | "codebuddy" | "canva" | "zai" | "moclaw" | "codex";
     email: string;
     password: string;
     tokens?: Record<string, unknown>;
@@ -109,15 +109,23 @@ accountsRouter.post("/", async (c) => {
 });
 
 /**
- * POST /api/accounts/instant-login - Kiro Pro instant login via refresh token (bulk)
+ * POST /api/accounts/instant-login - Instant login via refresh token (bulk)
  * No browser needed — just exchange refresh token for access token
- * Body: { tokens: ["refreshToken1", "refreshToken2", ...] }
+ * Body: { tokens: ["refreshToken1", ...], provider?: "kiro-pro" | "codex" }
+ *
+ * - kiro-pro (default): tokens are Kiro AWS Identity refresh tokens
+ * - codex: tokens are OpenAI OAuth refresh tokens (start with rt_*, ~200 chars)
  */
 accountsRouter.post("/instant-login", async (c) => {
-  const body = await c.req.json<{ tokens: string[] }>();
+  const body = await c.req.json<{ tokens: string[]; provider?: "kiro-pro" | "codex" }>();
+  const provider = body.provider || "kiro-pro";
 
   if (!body.tokens || !Array.isArray(body.tokens) || body.tokens.length === 0) {
     return c.json({ error: "tokens array is required (array of refresh token strings)" }, 400);
+  }
+
+  if (provider === "codex") {
+    return await handleCodexInstantLogin(c, body.tokens);
   }
 
   const REFRESH_URL = "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken";
@@ -211,7 +219,7 @@ accountsRouter.post("/instant-login", async (c) => {
 accountsRouter.post("/bulk", async (c) => {
   const body = await c.req.json<{
     accounts: Array<{
-      provider: "kiro" | "codebuddy" | "canva" | "zai" | "moclaw";
+      provider: "kiro" | "codebuddy" | "canva" | "zai" | "moclaw" | "codex";
       email: string;
       password: string;
     }>;
@@ -419,3 +427,145 @@ accountsRouter.post("/:id/warmup", async (c) => {
   warmupQueue.enqueue(id);
   return c.json({ message: "WarmUp queued", accountId: id });
 });
+
+const CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token";
+const CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+
+function decodeJwtPayload(token: string): Record<string, any> {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return {};
+    const padded = parts[1]! + "=".repeat((4 - parts[1]!.length % 4) % 4);
+    const json = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json);
+  } catch {
+    return {};
+  }
+}
+
+async function handleCodexInstantLogin(c: any, tokens: string[]) {
+  let success = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (const refreshToken of tokens) {
+    const trimmed = refreshToken.trim();
+    if (!trimmed) { failed++; continue; }
+
+    try {
+      const form = new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: trimmed,
+        client_id: CODEX_CLIENT_ID,
+        scope: "openid profile email offline_access",
+      });
+
+      const response = await fetch(CODEX_TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        errors.push(`token ...${trimmed.slice(-8)}: refresh failed (${response.status}): ${text.slice(0, 100)}`);
+        failed++;
+        continue;
+      }
+
+      const data = await response.json() as {
+        access_token?: string;
+        refresh_token?: string;
+        id_token?: string;
+        expires_in?: number;
+      };
+
+      if (!data.access_token) {
+        errors.push(`token ...${trimmed.slice(-8)}: no access_token in response`);
+        failed++;
+        continue;
+      }
+
+      const claims = data.id_token ? decodeJwtPayload(data.id_token) : {};
+      let email = String(claims.email || "");
+      let accountId = "";
+      const authClaim = claims["https://api.openai.com/auth"];
+      if (authClaim && typeof authClaim === "object") {
+        accountId = String(
+          authClaim.chatgpt_account_id || authClaim.account_id || authClaim.user_id || ""
+        );
+      }
+      if (!accountId) {
+        accountId = String(claims.chatgpt_account_id || claims.account_id || "");
+      }
+
+      if (!email || !accountId) {
+        try {
+          const usageResp = await fetch(CODEX_USAGE_URL, {
+            headers: {
+              "Authorization": `Bearer ${data.access_token}`,
+              "User-Agent": "codex_cli_rs/0.1.0",
+            },
+          });
+          if (usageResp.ok) {
+            const usage = await usageResp.json() as any;
+            if (!email) email = usage.email || "";
+            if (!accountId) {
+              accountId = String(usage.account_id || usage.chatgpt_account_id || "");
+            }
+          }
+        } catch {}
+      }
+
+      if (!email) email = `codex-${trimmed.slice(-8)}@token.local`;
+
+      const expiresIn = Number(data.expires_in) || 3600;
+      const expiresAt = String(Math.floor(Date.now() / 1000) + expiresIn);
+
+      const newTokens = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || trimmed,
+        id_token: data.id_token || "",
+        expires_at: expiresAt,
+        email,
+        account_id: accountId,
+        method: "refresh_token",
+      };
+
+      const existing = await db.select().from(accounts)
+        .where(eq(accounts.email, email))
+        .then((rows) => rows.find((r) => r.provider === "codex"));
+
+      if (existing) {
+        await db.update(accounts).set({
+          status: "active",
+          tokens: newTokens as unknown,
+          errorMessage: null,
+          lastLoginAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(accounts.id, existing.id));
+      } else {
+        await db.insert(accounts).values({
+          provider: "codex",
+          email,
+          password: encrypt("instant-login"),
+          status: "active",
+          tokens: newTokens as unknown,
+          lastLoginAt: new Date(),
+        });
+      }
+      success++;
+    } catch (err) {
+      errors.push(`token ...${trimmed.slice(-8)}: ${err instanceof Error ? err.message : String(err)}`);
+      failed++;
+    }
+  }
+
+  pool.invalidate("codex" as ProviderName);
+  if (success > 0) {
+    broadcast({ type: "accounts_updated", data: { provider: "codex", count: success } });
+  }
+
+  return c.json({ success, failed, errors: errors.length > 0 ? errors : undefined });
+}

@@ -46,6 +46,7 @@ function mergeWarmupMetadata(account: Account, health: ProviderHealthResult) {
 
   return {
     ...existing,
+    ...(health.metadata || {}),
     warmup: {
       lastCheckedAt: new Date().toISOString(),
       kind: health.kind,
@@ -54,7 +55,6 @@ function mergeWarmupMetadata(account: Account, health: ProviderHealthResult) {
       quotaSource: health.quota?.source,
       authRefreshed: Boolean(health.tokens),
       lastError: shortError(health.error || health.message),
-      metadata: health.metadata,
     },
   };
 }

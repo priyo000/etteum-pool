@@ -704,7 +704,7 @@ export async function loginAllProviders(
         stderr: "pipe",
         env: {
           ...process.env,
-          ENOWX_ALLOWED_PROVIDERS: "kiro,kiro-pro,codebuddy,canva,zai,windsurf,moclaw",
+          ENOWX_ALLOWED_PROVIDERS: "kiro,kiro-pro,codebuddy,canva,zai,windsurf,moclaw,codex",
           BATCHER_ENABLE_CAMOUFOX: "true",
           BATCHER_CAMOUFOX_HEADLESS: config.headless ? "true" : "false",
           BATCHER_PROXY_URL: proxyUrlForAuth || config.proxyUrl || "",
@@ -736,12 +736,13 @@ export async function loginAllProviders(
         zai: { success: false, error },
         windsurf: { success: false, error },
         moclaw: { success: false, error },
+        codex: { success: false, error },
       };
     }
 
     const output: Record<string, LoginResult> = {};
 
-    for (const provider of ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"] as const) {
+    for (const provider of ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw", "codex"] as const) {
       const pr = result[provider] as ProviderResult | undefined;
       if (!pr || !pr.success) {
         output[provider] = {
@@ -768,6 +769,7 @@ export async function loginAllProviders(
       zai: { success: false, error: errorMsg },
       windsurf: { success: false, error: errorMsg },
       moclaw: { success: false, error: errorMsg },
+      codex: { success: false, error: errorMsg },
     };
   }
 }

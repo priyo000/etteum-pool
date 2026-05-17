@@ -17,6 +17,7 @@ from app.providers.yepapi import YepAPIAdapter
 from app.providers.zai import ZaiProviderAdapter
 from app.providers.windsurf import WindsurfProviderAdapter
 from app.providers.moclaw import MoclawProviderAdapter
+from app.providers.codex import CodexProviderAdapter
 from app.providers.base import NormalizedAccount
 from app.errors.exceptions import BatcherError, RetryableBatcherError
 
@@ -335,17 +336,18 @@ async def main(email: str, password: str):
             "windsurf": (WindsurfProviderAdapter(), NormalizedAccount(provider="windsurf", identifier=email, secret=password)),
             "moclaw": (MoclawProviderAdapter(), NormalizedAccount(provider="moclaw", identifier=email, secret=password)),
             "kiro-pro": (KiroProProviderAdapter(), NormalizedAccount(provider="kiro-pro", identifier=email, secret=password)),
+            "codex": (CodexProviderAdapter(), NormalizedAccount(provider="codex", identifier=email, secret=password)),
         }
         tasks = []
         task_names = []
-        for name in ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw"]:
+        for name in ["kiro", "kiro-pro", "codebuddy", "canva", "zai", "windsurf", "moclaw", "codex"]:
             if name in allowed_providers:
                 adapter, account = provider_specs[name]
                 tasks.append(run_provider(adapter, account))
                 task_names.append(name)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         result = {"type": "result"}
-        for name in ["kiro", "kiro-pro", "codebuddy", "wavespeed", "canva", "yepapi", "zai", "windsurf", "moclaw"]:
+        for name in ["kiro", "kiro-pro", "codebuddy", "wavespeed", "canva", "yepapi", "zai", "windsurf", "moclaw", "codex"]:
             result[name] = {"success": False, "provider": name, "error": "skipped"}
         for name, provider_result in zip(task_names, results):
             if isinstance(provider_result, BaseException):

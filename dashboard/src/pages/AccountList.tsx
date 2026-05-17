@@ -17,8 +17,22 @@ import {
   warmupAllAccounts,
 } from "@/lib/api";
 
-type Provider = "kiro" | "codebuddy" | "canva";
+type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "zai" | "windsurf" | "moclaw" | "codex";
 type Status = "active" | "exhausted" | "error" | "pending" | "disabled";
+
+interface CodexQuotaWindow {
+  used_percent: number;
+  limit_window_seconds: number;
+  reset_at: string | null;
+  reset_after_seconds: number;
+}
+
+interface CodexQuotaMetadata {
+  plan_type?: string;
+  primary?: CodexQuotaWindow;
+  secondary?: CodexQuotaWindow;
+  rate_limited?: boolean;
+}
 
 interface Account {
   id: number;
@@ -31,6 +45,7 @@ interface Account {
   lastUsedAt?: string | null;
   lastLoginAt?: string | null;
   errorMessage?: string | null;
+  metadata?: { codex_quota?: CodexQuotaMetadata } | null;
 }
 
 const statusVariants: Record<string, "success" | "warning" | "error" | "secondary"> = {
@@ -53,6 +68,53 @@ function formatCredit(value?: number | null) {
 function formatDate(value?: string | null) {
   if (!value) return "-";
   return formatDateTimeID(value);
+}
+
+function formatWindow(seconds: number) {
+  if (!seconds || seconds <= 0) return "?";
+  if (seconds % 86400 === 0) return `${seconds / 86400}d`;
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  return `${Math.round(seconds / 60)}m`;
+}
+
+function formatResetIn(seconds: number) {
+  if (!seconds || seconds <= 0) return "now";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function CodexQuotaCell({ codex, fallbackRemaining, fallbackLimit }: { codex?: CodexQuotaMetadata; fallbackRemaining?: number; fallbackLimit?: number }) {
+  if (!codex || (!codex.primary && !codex.secondary)) {
+    return <span className="text-xs text-[var(--muted-foreground)]">{formatCredit(fallbackRemaining)}/{formatCredit(fallbackLimit)}</span>;
+  }
+  const renderBar = (label: string, w?: CodexQuotaWindow) => {
+    if (!w) return null;
+    const used = Math.max(0, Math.min(100, w.used_percent || 0));
+    const remaining = 100 - used;
+    const tone = remaining <= 10 ? "bg-red-500" : remaining <= 40 ? "bg-yellow-500" : "bg-green-500";
+    return (
+      <div className="space-y-0.5">
+        <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+          <span className="font-medium">{label} ({formatWindow(w.limit_window_seconds)})</span>
+          <span>{remaining.toFixed(1)}% left · reset {formatResetIn(w.reset_after_seconds)}</span>
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-[var(--secondary)] overflow-hidden">
+          <div className={`h-full ${tone}`} style={{ width: `${remaining}%` }} />
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div className="space-y-1.5 min-w-[200px]">
+      {codex.plan_type && <div className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">Plan: {codex.plan_type}{codex.rate_limited && <span className="ml-2 text-red-400">RATE LIMITED</span>}</div>}
+      {renderBar("Session", codex.primary)}
+      {renderBar("Weekly", codex.secondary)}
+    </div>
+  );
 }
 
 export default function AccountList() {
@@ -208,7 +270,11 @@ export default function AccountList() {
                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isEnabled ? "translate-x-4" : "translate-x-0.5"}`} />
                       </button>
                     </td>
-                    <td className="p-4 text-sm text-[var(--muted-foreground)]">{formatCredit(account.quotaRemaining)}/{formatCredit(account.quotaLimit)}</td>
+                    <td className="p-4 text-sm text-[var(--muted-foreground)]">
+                      {account.provider === "codex"
+                        ? <CodexQuotaCell codex={account.metadata?.codex_quota} fallbackRemaining={account.quotaRemaining} fallbackLimit={account.quotaLimit} />
+                        : `${formatCredit(account.quotaRemaining)}/${formatCredit(account.quotaLimit)}`}
+                    </td>
                     <td className="p-4 text-xs text-[var(--muted-foreground)]">{formatDate(account.lastLoginAt || account.lastUsedAt)}</td>
                     <td className="p-4">
                       <div className="flex gap-1">
