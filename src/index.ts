@@ -9,9 +9,35 @@ import { proxyRouter } from "./proxy/index";
 import { websocketHandler, getClientCount } from "./ws/index";
 import { isValidApiKey } from "./api/keys";
 import { autoWarmupScheduler } from "./auth/warmup-scheduler";
+import { db } from "./db/index";
+import { filterRules } from "./db/schema";
+import { sql } from "drizzle-orm";
+import { PUDIDIL_FILTERS } from "./proxy/filters";
+import { loadFilterCache } from "./proxy/filter-cache";
 
 // Run database migrations on startup
 await runMigrations();
+
+// Seed filter rules from PUDIDIL_FILTERS if table is empty (first boot only)
+try {
+  const [row] = await db.select({ count: sql<number>`COUNT(*)` }).from(filterRules);
+  if (Number(row?.count || 0) === 0) {
+    await db.insert(filterRules).values(
+      PUDIDIL_FILTERS.map((r, i) => ({
+        ruleId: r.id,
+        pattern: r.pattern,
+        replacement: r.replacement,
+        isActive: r.is_active,
+        isRegex: r.is_regex,
+        sortOrder: i,
+      }))
+    );
+    console.log(`[DB] Seeded ${PUDIDIL_FILTERS.length} filter rules`);
+  }
+  await loadFilterCache();
+} catch (e) {
+  console.error("[DB] Filter rules seed/load skipped:", e instanceof Error ? e.message : e);
+}
 
 // Start auto-warmup scheduler (reads settings from DB)
 await autoWarmupScheduler.start();

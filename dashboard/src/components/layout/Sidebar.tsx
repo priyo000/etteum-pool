@@ -13,6 +13,7 @@ import {
   CreditCard,
   Globe,
   Sparkles,
+  Filter,
   LogOut,
   X,
 } from "lucide-react";
@@ -50,6 +51,7 @@ const navSections: NavSection[] = [
       { label: "API Key", path: "/api-key", icon: Key },
       { label: "Proxy Pool", path: "/proxy-pool", icon: Globe },
       { label: "VCC Pool", path: "/vcc-pool", icon: CreditCard },
+      { label: "Filter Rules", path: "/filter-rules", icon: Filter },
       { label: "Proxy Settings", path: "/settings", icon: Sliders },
     ],
   },

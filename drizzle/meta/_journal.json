@@ -36,6 +36,13 @@
       "when": 1779897600000,
       "tag": "0004_image_studio",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779969926867,
+      "tag": "0005_cheerful_black_tom",
+      "breakpoints": true
     }
   ]
 }

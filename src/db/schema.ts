@@ -131,6 +131,20 @@ export const imageStudioResults = pgTable("image_studio_results", {
   index("image_studio_results_chat_idx").on(table.chatId),
 ]);
 
+export const filterRules = pgTable("filter_rules", {
+  id: serial("id").primaryKey(),
+  ruleId: text("rule_id").notNull().unique(),
+  pattern: text("pattern").notNull(),
+  replacement: text("replacement").notNull().default(""),
+  isActive: boolean("is_active").notNull().default(true),
+  isRegex: boolean("is_regex").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("filter_rules_sort_order_idx").on(table.sortOrder),
+]);
+
 export const proxyPool = pgTable("proxy_pool", {
   id: serial("id").primaryKey(),
   url: text("url").notNull(),

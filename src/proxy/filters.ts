@@ -168,13 +168,20 @@ export const PUDIDIL_FILTERS: FilterRule[] = [
   },
 ];
 
+import { getFilterRulesCached } from "./filter-cache";
+
 /**
- * Apply pudidil filters to a string
+ * Apply pudidil filters to a string. Reads rules from in-memory cache (DB-backed).
+ * Falls back to PUDIDIL_FILTERS const if cache is empty (pre-boot).
  */
 export function applyPudidilFilters(content: string): string {
   let filtered = content;
+  const cached = getFilterRulesCached();
+  const rules = cached.length > 0
+    ? cached.map((r) => ({ pattern: r.pattern, replacement: r.replacement, is_active: r.isActive, is_regex: r.isRegex }))
+    : PUDIDIL_FILTERS;
 
-  for (const rule of PUDIDIL_FILTERS) {
+  for (const rule of rules) {
     if (!rule.is_active) continue;
 
     if (rule.is_regex) {
@@ -185,10 +192,7 @@ export function applyPudidilFilters(content: string): string {
         console.error(`[Filter] Invalid regex pattern: ${rule.pattern}`, error);
       }
     } else {
-      // Simple string replacement (case-sensitive for exact matches)
-      // Skip empty patterns to avoid infinite loops
       if (!rule.pattern) continue;
-      // Use global replace to remove all occurrences
       while (filtered.includes(rule.pattern)) {
         filtered = filtered.replace(rule.pattern, rule.replacement);
       }
