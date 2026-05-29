@@ -5,6 +5,8 @@ import type { Account } from "../../db/schema";
 /** Map kp- prefixed model IDs to actual Kiro API model names */
 const kpModelMap: Record<string, string> = {
   "kp-auto": "auto",
+  "kp-opus-4.8": "claude-opus-4.8",
+  "kp-opus-4.8-thinking": "claude-opus-4.8-thinking",
   "kp-opus-4.7": "claude-opus-4.7",
   "kp-opus-4.7-thinking": "claude-opus-4.7-thinking",
   "kp-opus-4.6": "claude-opus-4.6",
@@ -25,10 +27,12 @@ export class KiroProProvider extends KiroProvider {
 
   override supportedModels: ModelInfo[] = [
     { id: "kp-auto", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
-    { id: "kp-opus-4.7", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
-    { id: "kp-opus-4.7-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
-    { id: "kp-opus-4.6", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
-    { id: "kp-opus-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
+    { id: "kp-opus-4.8", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+    { id: "kp-opus-4.8-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+    { id: "kp-opus-4.7", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+    { id: "kp-opus-4.7-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+    { id: "kp-opus-4.6", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+    { id: "kp-opus-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
     { id: "kp-opus-4.5", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
     { id: "kp-sonnet-4.6", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.012 / 1000, creditSource: "estimated" },
     { id: "kp-sonnet-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", tier: "standard", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.015 / 1000, creditSource: "estimated" },
