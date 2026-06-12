@@ -14,9 +14,11 @@
  *   bun run scripts/production.ts --skip-build
  */
 
-const root = new URL("..", import.meta.url).pathname;
-const dashboardDir = `${root}/dashboard`;
-const dashboardDist = `${dashboardDir}/dist/index.html`;
+import { resolve } from "path";
+
+const root = resolve(import.meta.dir, "..");
+const dashboardDir = resolve(root, "dashboard");
+const dashboardDist = resolve(dashboardDir, "dist", "index.html");
 const skipBuild = process.argv.includes("--skip-build");
 
 const port = process.env.PORT || "1930";
@@ -32,7 +34,7 @@ async function buildDashboard() {
 
   if (!skipBuild || !distExists) {
     console.log("[production] Building dashboard...");
-    const proc = Bun.spawn(["bun", "run", "build"], {
+    const proc = Bun.spawn([process.execPath, "run", "build"], {
       cwd: dashboardDir,
       stdout: "inherit",
       stderr: "inherit",
@@ -60,7 +62,7 @@ console.log(`║  Dashboard: http://localhost:${dashboardPort}    ║`);
 console.log(`╚══════════════════════════════════════╝\n`);
 
 // Start backend
-const backend = Bun.spawn(["bun", "src/index.ts"], {
+const backend = Bun.spawn([process.execPath, "src/index.ts"], {
   cwd: root,
   stdout: "inherit",
   stderr: "inherit",
@@ -72,7 +74,7 @@ const backend = Bun.spawn(["bun", "src/index.ts"], {
 });
 
 // Start dashboard static server
-const dashboard = Bun.spawn(["bun", "run", "scripts/serve-dashboard.ts"], {
+const dashboard = Bun.spawn([process.execPath, "run", "scripts/serve-dashboard.ts"], {
   cwd: root,
   stdout: "inherit",
   stderr: "inherit",

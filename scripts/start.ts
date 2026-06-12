@@ -1,4 +1,6 @@
-const root = new URL("..", import.meta.url).pathname;
+import { resolve } from "path";
+
+const root = resolve(import.meta.dir, "..");
 const port = process.env.PORT || "1930";
 const dashboardPort = process.env.DASHBOARD_PORT || "1931";
 

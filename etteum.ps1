@@ -61,8 +61,10 @@ function Invoke-Start {
   }
 
   Write-Host "Starting Etteum..."
-  $proc = Start-Process -FilePath "bun" -ArgumentList "scripts/production.ts","--skip-build" `
-    -WorkingDirectory $ProjectDir -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile `
+  $ErrFile = Join-Path $ProjectDir ".etteum.err.log"
+  $BunPath = (Get-Command "bun" -ErrorAction Stop).Source
+  $proc = Start-Process -FilePath $BunPath -ArgumentList "scripts/production.ts","--skip-build" `
+    -WorkingDirectory $ProjectDir -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile `
     -WindowStyle Hidden -PassThru
   $proc.Id | Out-File -FilePath $PidFile -Encoding ascii
   Start-Sleep -Seconds 1
@@ -85,6 +87,7 @@ function Invoke-Stop {
     Where-Object { $_.CommandLine -match "scripts[\\/](production|start|serve-dashboard)\.ts|src[\\/]index\.ts" } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   Remove-Item $PidFile -ErrorAction SilentlyContinue
+  Remove-Item (Join-Path $ProjectDir ".etteum.err.log") -ErrorAction SilentlyContinue
   Write-Host "Etteum stopped"
 }
 
@@ -104,8 +107,11 @@ function Invoke-Logs([string]$tailArg) {
     Write-Host "No logs yet at $LogFile"
     return
   }
+  $ErrFile = Join-Path $ProjectDir ".etteum.err.log"
   if ($tailArg -eq "-f" -or -not $tailArg) {
     Get-Content $LogFile -Wait -Tail 50
+  } elseif ($tailArg -eq "-e") {
+    if (Test-Path $ErrFile) { Get-Content $ErrFile -Tail 50 } else { Write-Host "No error log" }
   } else {
     Get-Content $LogFile -Tail ([int]$tailArg)
   }
@@ -174,7 +180,7 @@ switch ($Command.ToLower()) {
     Write-Host "  stop        Stop the server"
     Write-Host "  restart     Restart the server"
     Write-Host "  status      Show server status"
-    Write-Host "  logs        Follow server logs (.\etteum.ps1 logs -f)"
+    Write-Host "  logs        Follow server logs (.\etteum.ps1 logs -f | -e for errors)"
     Write-Host "  update      Pull git, install deps, build, restart"
     Write-Host "  build       Rebuild dashboard and restart"
     Write-Host "  port        Show/change ports (.\etteum.ps1 port 1630 1631)"

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { resolve } from "path";
 import { config } from "./config";
 import { runMigrations } from "./db/migrate";
 import { apiRouter } from "./api/index";
@@ -142,8 +143,8 @@ app.get("/api/info", (c) => {
 });
 
 // Serve dashboard static files (SPA fallback)
-const dashboardDist = new URL("../dashboard/dist", import.meta.url).pathname;
-const dashboardIndex = `${dashboardDist}/index.html`;
+const dashboardDist = resolve(import.meta.dir, "..", "dashboard", "dist");
+const dashboardIndex = resolve(dashboardDist, "index.html");
 
 const staticMimeTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

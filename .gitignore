@@ -32,6 +32,7 @@ _.log
 .poolprox.log
 .poolprox.pid
 .etteum.log
+.etteum.err.log
 .etteum.pid
 .aiproxy.log
 .aiproxy.pid
