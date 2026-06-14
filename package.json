@@ -8,6 +8,7 @@
     "dev": "bun scripts/start.ts",
     "build": "cd dashboard && bun run build",
     "migrate": "bun src/db/migrate.ts",
+    "db:push": "bunx drizzle-kit push",
     "setup": "bash install.sh",
     "setup:win": "powershell -ExecutionPolicy Bypass -File install.ps1"
   },
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "better-sqlite3": "^12.10.1",
     "bun-types": "latest",
     "drizzle-kit": "^0.31.10"
   }

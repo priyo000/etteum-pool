@@ -807,6 +807,24 @@ accountsRouter.post("/:id/login", async (c) => {
 });
 
 /**
+ * POST /api/accounts/refresh-all - Refresh quota/usage for all active accounts
+ */
+accountsRouter.post("/refresh-all", async (c) => {
+  const allAccounts = await db.select().from(accounts).where(eq(accounts.enabled, true));
+  const nonByok = allAccounts.filter((a) => a.provider !== "byok" && a.status !== "pending");
+
+  if (nonByok.length === 0) {
+    return c.json({ message: "No accounts to refresh", queued: 0 });
+  }
+
+  for (const acc of nonByok) {
+    warmupQueue.enqueue(acc.id);
+  }
+
+  return c.json({ message: "Refresh queued for all accounts", queued: nonByok.length });
+});
+
+/**
  * POST /api/accounts/:id/refresh-quota - Refresh quota for account
  */
 accountsRouter.post("/:id/refresh-quota", async (c) => {

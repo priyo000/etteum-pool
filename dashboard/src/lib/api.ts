@@ -121,6 +121,12 @@ export async function fetchDashboardStats(hours?: number | null, range?: string)
   return fetchApi(`/api/stats${qs ? `?${qs}` : ""}`);
 }
 
+export async function refreshAllAccounts() {
+  return fetchApi<{ message: string; queued: number }>("/api/accounts/refresh-all", {
+    method: "POST",
+  });
+}
+
 export async function fetchAccounts() {
   return fetchApi("/api/accounts");
 }
@@ -792,6 +798,47 @@ export async function updateByokProvider(
 
 export async function deleteByokProvider(id: number): Promise<{ success: boolean; deleted: number }> {
   return fetchApi(`/api/accounts/byok/${id}`, { method: "DELETE" });
+}
+
+// ─── Relay / Tunnel API ──────────────────────────────────────────────────────
+
+export async function fetchTunnelStatus(): Promise<any> {
+  return fetchApi("/api/relay/tunnel");
+}
+
+export async function enableTunnel(port?: number): Promise<any> {
+  return fetchApi("/api/relay/tunnel/enable", {
+    method: "POST",
+    body: JSON.stringify(port ? { port } : {}),
+  });
+}
+
+export async function disableTunnel(): Promise<any> {
+  return fetchApi("/api/relay/tunnel/disable", { method: "POST" });
+}
+
+export async function fetchTunnelDeployUrls(): Promise<any> {
+  return fetchApi("/api/relay/tunnel/deploy");
+}
+
+export async function fetchTunnelTemplate(platform: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/relay/tunnel/template/${platform}`, {
+    headers: {
+      Authorization: `Bearer ${getApiKey()}`,
+    },
+  });
+  return res.text();
+}
+
+export async function saveEdgeRelay(data: { platform: string; url: string; relayKey?: string }): Promise<any> {
+  return fetchApi("/api/relay/tunnel/edge", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteEdgeRelay(): Promise<any> {
+  return fetchApi("/api/relay/tunnel/edge", { method: "DELETE" });
 }
 
 export async function testByokProvider(

@@ -160,24 +160,18 @@ export async function markProxyFail(id: number, error?: string) {
 export async function checkProxyHealth(proxyUrl: string): Promise<{ ok: boolean; latencyMs: number; error?: string; ip?: string }> {
   const start = Date.now();
   try {
-    const proc = Bun.spawn(
-      ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}|%{remote_ip}", "--proxy", proxyUrl, "--max-time", "10", "https://httpbin.org/ip"],
-      { stdout: "pipe", stderr: "pipe" }
-    );
-    const stdout = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
+    const res = await fetch("https://httpbin.org/ip", {
+      proxy: proxyUrl,
+      signal: AbortSignal.timeout(10_000),
+    });
     const latencyMs = Date.now() - start;
 
-    if (exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
-      return { ok: false, latencyMs, error: stderr.trim() || `curl exit ${exitCode}` };
+    if (!res.ok) {
+      return { ok: false, latencyMs, error: `HTTP ${res.status}` };
     }
 
-    const [statusCode, ip] = stdout.trim().split("|");
-    if (statusCode === "200") {
-      return { ok: true, latencyMs, ip };
-    }
-    return { ok: false, latencyMs, error: `HTTP ${statusCode}` };
+    const body = await res.json() as { origin?: string };
+    return { ok: true, latencyMs, ip: body.origin };
   } catch (err) {
     return { ok: false, latencyMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) };
   }

@@ -1,4 +1,9 @@
-const root = new URL("..", import.meta.url).pathname;
+// Fix: import.meta.url.pathname encodes spaces on Windows (%20) and adds leading slash
+const _rawRoot = new URL("..", import.meta.url).pathname;
+let root = decodeURIComponent(_rawRoot);
+if (process.platform === "win32" && root.startsWith("/") && root.length > 2 && root.charAt(2) === ":") {
+  root = root.slice(1);
+}
 const port = process.env.PORT || "1930";
 const dashboardPort = process.env.DASHBOARD_PORT || "1931";
 

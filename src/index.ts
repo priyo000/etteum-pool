@@ -6,6 +6,7 @@ import { runMigrations } from "./db/migrate";
 import { apiRouter } from "./api/index";
 import { authRouter } from "./auth/index";
 import { proxyRouter } from "./proxy/index";
+import { relayApiRouter, relayProxyRouter, autoStartRelay, isRelayTunnelUpgrade, getRelayWebSocketHandler } from "./relay/index";
 import { websocketHandler, getClientCount } from "./ws/index";
 import { isValidApiKey } from "./api/keys";
 import { autoWarmupScheduler } from "./auth/warmup-scheduler";
@@ -63,6 +64,9 @@ try {
 // Start auto-warmup scheduler (reads settings from DB)
 await autoWarmupScheduler.start();
 
+// Auto-start relay proxy if configured
+await autoStartRelay();
+
 // Create Hono app
 const app = new Hono();
 
@@ -72,6 +76,29 @@ app.use("*", logger());
 
 // API Key authentication middleware for proxy endpoints
 app.use("/v1/*", async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  const xApiKey = c.req.header("x-api-key");
+  const token = authHeader?.replace("Bearer ", "") || xApiKey;
+
+  if (!token) {
+    return c.json(
+      { error: { message: "Missing Authorization header", type: "auth_error" } },
+      401
+    );
+  }
+
+  if (!(await isValidApiKey(token))) {
+    return c.json(
+      { error: { message: "Invalid API key", type: "auth_error" } },
+      401
+    );
+  }
+
+  await next();
+});
+
+// API Key authentication for relay proxy endpoints (forwarded to tunneled pools)
+app.use("/relay/*", async (c, next) => {
   const authHeader = c.req.header("Authorization");
   const xApiKey = c.req.header("x-api-key");
   const token = authHeader?.replace("Bearer ", "") || xApiKey;
@@ -119,6 +146,8 @@ app.use("/api/*", async (c, next) => {
 app.route("/", proxyRouter); // /v1/chat/completions, /v1/models
 app.route("/api", apiRouter); // /api/accounts, /api/settings, /api/stats
 app.route("/api/auth", authRouter); // /api/auth/login, /api/auth/queue
+app.route("/api/relay", relayApiRouter); // /api/relay/* (management)
+app.route("/relay", relayProxyRouter); // /relay/:tunnelId/* (tunnel HTTP proxy)
 
 // Health/info endpoint (moved from / to /api/health)
 app.get("/api/info", (c) => {
@@ -142,7 +171,7 @@ app.get("/api/info", (c) => {
 });
 
 // Serve dashboard static files (SPA fallback)
-const dashboardDist = new URL("../dashboard/dist", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1");
+const dashboardDist = decodeURIComponent(new URL("../dashboard/dist", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1"));
 const dashboardIndex = `${dashboardDist}/index.html`;
 
 const staticMimeTypes: Record<string, string> = {
@@ -167,7 +196,14 @@ const server = Bun.serve({
     // Handle WebSocket upgrade
     const url = new URL(req.url);
     if (url.pathname === "/ws") {
-      const upgraded = server.upgrade(req, { data: {} });
+      const upgraded = server.upgrade(req, { data: { type: "dashboard" } } as any);
+      if (upgraded) return undefined;
+      return new Response("WebSocket upgrade failed", { status: 400 });
+    }
+
+    // Handle relay tunnel WebSocket upgrade
+    if (isRelayTunnelUpgrade(req)) {
+      const upgraded = server.upgrade(req, { data: { type: "relay_tunnel", authenticated: false } } as any);
       if (upgraded) return undefined;
       return new Response("WebSocket upgrade failed", { status: 400 });
     }
@@ -197,26 +233,71 @@ const server = Bun.serve({
 
     return new Response("Not Found", { status: 404 });
   },
-  websocket: websocketHandler,
+  websocket: {
+    open(ws) {
+      const data = ws.data as any;
+      if (data?.type === "relay_tunnel") {
+        const handler = getRelayWebSocketHandler();
+        if (handler) handler.open(ws as any);
+      } else {
+        websocketHandler.open(ws as any);
+      }
+    },
+    message(ws, message) {
+      const data = ws.data as any;
+      if (data?.type === "relay_tunnel") {
+        const handler = getRelayWebSocketHandler();
+        if (handler) handler.message(ws as any, message);
+      } else {
+        websocketHandler.message(ws as any, message);
+      }
+    },
+    close(ws) {
+      const data = ws.data as any;
+      if (data?.type === "relay_tunnel") {
+        const handler = getRelayWebSocketHandler();
+        if (handler) handler.close(ws as any);
+      } else {
+        websocketHandler.close(ws as any);
+      }
+    },
+    drain(ws) {
+      const data = ws.data as any;
+      if (data?.type !== "relay_tunnel") {
+        websocketHandler.drain(ws as any);
+      }
+    },
+  },
 });
 
-console.log(`
-╔══════════════════════════════════════════════════╗
-║           🔄 Pool Proxy Server                   ║
-╠══════════════════════════════════════════════════╣
-║  HTTP:      http://localhost:${config.port}               ║
-║  WebSocket: ws://localhost:${config.port}/ws              ║
-║  Database:  SQLite                              ║
-║  Dashboard: http://localhost:${config.dashboardPort}              ║
-╠══════════════════════════════════════════════════╣
-║  Endpoints:                                      ║
-║    POST /v1/chat/completions  (proxy)            ║
-║    POST /v1/messages          (Anthropic)        ║
-║    GET  /v1/models            (models)           ║
-║    GET  /api/accounts         (management)       ║
-║    GET  /api/stats            (statistics)       ║
-║    WS   /ws                   (real-time)        ║
-╚══════════════════════════════════════════════════╝
+if (!process.env.SUPPRESS_BANNER) {
+  console.log(`
+${"\x1b[36m"}  _____ _   _                       ${"\x1b[0m"}
+${"\x1b[36m"} | ____| |_| |_ ___ _   _ _ __ ___   ${"\x1b[0m"}
+${"\x1b[36m"} |  _| | __| __/ _ \\ | | | '_ \` _ \\  ${"\x1b[0m"}
+${"\x1b[36m"} | |___| |_| ||  __/ |_| | | | | | | ${"\x1b[0m"}
+${"\x1b[36m"} |_____|\\__|\\__\\___|\\__,_|_| |_| |_| ${"\x1b[0m"}
+
+  ${"\x1b[2m"}────────────────────────────────────────────────────${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} HTTP       ${"\x1b[36m"}http://localhost:${config.port}${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} WebSocket  ${"\x1b[36m"}ws://localhost:${config.port}/ws${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} Dashboard  ${"\x1b[36m"}http://localhost:${config.dashboardPort}${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} Database   ${"\x1b[37m"}SQLite${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} API Key    ${"\x1b[33m"}${config.apiKey}${"\x1b[0m"}
+  ${"\x1b[2m"}────────────────────────────────────────────────────${"\x1b[0m"}
+
+  ${"\x1b[2m"}Endpoints${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} POST ${"\x1b[37m"}/v1/chat/completions${"\x1b[0m"}   ${"\x1b[2m"}proxy${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} POST ${"\x1b[37m"}/v1/messages${"\x1b[0m"}            ${"\x1b[2m"}anthropic${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} GET  ${"\x1b[37m"}/v1/models${"\x1b[0m"}              ${"\x1b[2m"}models${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} GET  ${"\x1b[37m"}/api/accounts${"\x1b[0m"}           ${"\x1b[2m"}management${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} GET  ${"\x1b[37m"}/api/stats${"\x1b[0m"}              ${"\x1b[2m"}statistics${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} WS   ${"\x1b[37m"}/ws${"\x1b[0m"}                     ${"\x1b[2m"}real-time${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} WS   ${"\x1b[37m"}/relay/tunnel${"\x1b[0m"}           ${"\x1b[2m"}ws relay${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} ALL  ${"\x1b[37m"}/relay/:id/v1/*${"\x1b[0m"}         ${"\x1b[2m"}relay proxy${"\x1b[0m"}
+  ${"\x1b[32m"}▸${"\x1b[0m"} POST ${"\x1b[37m"}/api/relay/tunnel/*${"\x1b[0m"}     ${"\x1b[2m"}cloudflared${"\x1b[0m"}
+  ${"\x1b[2m"}────────────────────────────────────────────────────${"\x1b[0m"}
 `);
+}
 
 export default server;

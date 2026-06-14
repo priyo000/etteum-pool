@@ -38,6 +38,14 @@ export const config = {
   browserEngine: process.env.BROWSER_ENGINE || "camoufox",
   captchaService: process.env.CAPTCHA_SERVICE || "none",
   captchaApiKey: process.env.CAPTCHA_API_KEY || "",
+  // Relay Proxy settings
+  relayMode: process.env.RELAY_MODE || "disabled", // disabled | client | server | both
+  relayServerUrl: process.env.RELAY_SERVER_URL || "", // ws(s)://relay-server.com/relay/tunnel
+  relaySecret: process.env.RELAY_SECRET || "", // shared secret for tunnel auth
+  relayPeerName: process.env.RELAY_PEER_NAME || "", // human-readable name for this pool
+  relayPublicBaseUrl: process.env.RELAY_PUBLIC_BASE_URL || "", // public URL for relay server
+  relayMaxTunnels: Number(process.env.RELAY_MAX_TUNNELS) || 50,
+  relayAutoStart: process.env.RELAY_AUTO_START || "false",
   // Providers: kiro, kiro-pro, codebuddy, canva, codex, qoder
   providers: ["kiro", "kiro-pro", "codebuddy", "canva", "codex", "qoder"] as const,
 } as const;

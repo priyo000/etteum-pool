@@ -48,8 +48,8 @@ function Test-PortInUse([int]$port) {
 }
 
 function Invoke-Start {
-  $apiPort = [int](Get-EnvValue "PORT" "1630")
-  $dashPort = [int](Get-EnvValue "DASHBOARD_PORT" "1631")
+  $apiPort = [int](Get-EnvValue "PORT" "1930")
+  $dashPort = [int](Get-EnvValue "DASHBOARD_PORT" "1931")
 
   if (Test-PortInUse $apiPort) {
     Write-Host "Port $apiPort already in use. Run: .\etteum.ps1 stop" -ForegroundColor Red
@@ -61,21 +61,32 @@ function Invoke-Start {
   }
 
   Write-Host "Starting Etteum..."
-  $proc = Start-Process -FilePath "bun" -ArgumentList "scripts/production.ts","--skip-build" `
-    -WorkingDirectory $ProjectDir -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile `
-    -WindowStyle Hidden -PassThru
+  $BunExe = (Get-Command bun -ErrorAction SilentlyContinue).Source
+  if (-not $BunExe) { $BunExe = "$env:USERPROFILE\.bun\bin\bun.exe" }
+  # Start bun directly — NO -RedirectStandardOutput (it breaks Bun.spawn on Windows)
+  $proc = Start-Process -FilePath $BunExe -ArgumentList "scripts/production.ts","--skip-build" `
+    -WorkingDirectory $ProjectDir -PassThru
   $proc.Id | Out-File -FilePath $PidFile -Encoding ascii
-  Start-Sleep -Seconds 1
 
-  if (-not $proc.HasExited) {
+  # Wait for server to be ready (retry up to 15 seconds)
+  $started = $false
+  for ($i = 0; $i -lt 15; $i++) {
+    Start-Sleep -Seconds 1
+    try {
+      $listener = Get-NetTCPConnection -LocalPort $apiPort -State Listen -ErrorAction Stop
+      $started = $true
+      break
+    } catch { continue }
+  }
+
+  if ($started) {
     Write-Host "Etteum started (PID $($proc.Id))" -ForegroundColor Green
     Write-Host "  Backend:   http://localhost:$apiPort"
     Write-Host "  Dashboard: http://localhost:$dashPort"
     Write-Host "  Logs:      .\etteum.ps1 logs"
   } else {
     Remove-Item $PidFile -ErrorAction SilentlyContinue
-    Write-Host "Failed to start. Check logs at $LogFile" -ForegroundColor Red
-    Get-Content $LogFile -Tail 5 -ErrorAction SilentlyContinue
+    Write-Host "Failed to start. Try: bun scripts/production.ts --skip-build" -ForegroundColor Red
   }
 }
 

@@ -37,6 +37,7 @@ import {
   testByokProvider,
   updateByokProvider,
   updateSettings,
+  refreshAllAccounts,
   warmupAllAccounts,
   type AutoWarmupStatus,
   type ByokProvider,
@@ -564,6 +565,14 @@ export default function Accounts() {
     } catch (err) { showError(err); }
   }
 
+  async function handleRefreshAll() {
+    try {
+      const res = await refreshAllAccounts();
+      showSuccess(res.message || `Refresh queued for ${res.queued} accounts.`);
+      setTimeout(() => { load(); }, 300);
+    } catch (err) { showError(err); }
+  }
+
   async function handleWarmupProvider(provider: Provider) {
     try {
       const res = await warmupAllAccounts({ providers: [provider], statuses: ["active", "exhausted", "error"] }) as any;
@@ -750,6 +759,9 @@ export default function Accounts() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRefreshAll}>
+            <Zap className="w-4 h-4 mr-2" /> Refresh All
           </Button>
           <Button variant="outline" size="sm" onClick={handleLoginAll}>
             <Play className="w-4 h-4 mr-2" /> Login Pending
