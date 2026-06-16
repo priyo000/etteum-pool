@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "../db/index";
 import { accounts, requestLogs, vccCards, vccTransactions } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { encrypt, decrypt } from "../utils/crypto";
 import { broadcast } from "../ws/index";
 import type { NewAccount } from "../db/schema";
@@ -377,6 +377,231 @@ accountsRouter.post("/byok/:id/test", async (c) => {
       error: error instanceof Error ? error.message : "Network error",
     });
   }
+});
+
+/**
+ * Canva team-join endpoints
+ * NOTE: Defined BEFORE /:id routes to avoid route collision.
+ */
+
+/**
+ * POST /api/accounts/canva/join-team
+ *
+ * Bulk-join Canva accounts into a team via an invite link.
+ * Body: { invite_url, account_ids[], on_existing?, headless?, concurrency? }
+ *
+ * Returns 202 immediately; the bulk-join runs in the background and
+ * broadcasts progress over WebSocket as `canva_join_progress`.
+ */
+accountsRouter.post("/canva/join-team", async (c) => {
+  const body = await c.req.json<{
+    invite_url: string;
+    account_ids: number[];
+    on_existing?: "switch" | "skip" | "add";
+    headless?: boolean;
+    concurrency?: number;
+  }>();
+
+  if (!body.invite_url || typeof body.invite_url !== "string") {
+    return c.json({ error: "invite_url (string) is required" }, 400);
+  }
+  if (!Array.isArray(body.account_ids) || body.account_ids.length === 0) {
+    return c.json({ error: "account_ids[] (non-empty) is required" }, 400);
+  }
+  if (!/^https?:\/\/(www\.)?canva\.com\/brand\/join/i.test(body.invite_url)) {
+    return c.json({ error: "invite_url must be a https://www.canva.com/brand/join?token=... link" }, 400);
+  }
+
+  // Validate all referenced accounts exist & are canva
+  const ids = body.account_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) {
+    return c.json({ error: "no valid account_ids" }, 400);
+  }
+
+  const rows = await db.select().from(accounts);
+  const valid = rows.filter((a) => ids.includes(a.id) && a.provider === "canva");
+  if (valid.length === 0) {
+    return c.json({ error: "no canva accounts matched the provided ids" }, 400);
+  }
+
+  const onExisting = body.on_existing || "switch";
+  // Clamp concurrency 1..5 — same cap the bulk runner enforces.
+  const concurrency = Math.max(
+    1,
+    Math.min(Number.isFinite(body.concurrency) ? Number(body.concurrency) : 1, 5),
+  );
+
+  // Lazy import to avoid pulling Python deps at module-load time
+  const { bulkJoinCanvaTeam } = await import("../auth/canva-team");
+
+  // Fire and forget — broadcasts progress via WS
+  void bulkJoinCanvaTeam(
+    valid.map((a) => a.id),
+    body.invite_url,
+    onExisting,
+    { headless: body.headless, concurrency },
+  ).catch((err) => {
+    console.error("[canva-join] bulk job failed:", err);
+  });
+
+  return c.json(
+    {
+      message: "Bulk join queued",
+      queued: valid.length,
+      account_ids: valid.map((a) => a.id),
+      on_existing: onExisting,
+      concurrency,
+    },
+    202,
+  );
+});
+
+/**
+ * POST /api/accounts/bulk-delete
+ *
+ * Atomically delete many accounts at once. Mirrors DELETE /:id but for an
+ * array of ids: nullifies FK references, deletes rows, broadcasts WS events.
+ *
+ * Body: { ids: number[] }
+ * Returns: { deleted: number[], notFound: number[], totalDeleted }
+ *
+ * Registered BEFORE /:id routes to avoid any chance of segment collision.
+ */
+accountsRouter.post("/bulk-delete", async (c) => {
+  const body = await c.req.json<{ ids: number[] }>().catch(() => ({ ids: [] as number[] }));
+  const ids = (Array.isArray(body.ids) ? body.ids : [])
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
+
+  if (ids.length === 0) {
+    return c.json({ error: "ids[] (non-empty array of positive integers) is required" }, 400);
+  }
+
+  // Cap to prevent accidental nukes from a runaway client
+  if (ids.length > 500) {
+    return c.json({ error: "too many ids (max 500 per request)" }, 400);
+  }
+
+  // Nullify foreign-key references first (same order as single DELETE /:id)
+  await db.update(requestLogs).set({ accountId: null }).where(inArray(requestLogs.accountId, ids));
+  await db.update(vccCards).set({ usedByAccountId: null }).where(inArray(vccCards.usedByAccountId, ids));
+  await db.delete(vccTransactions).where(inArray(vccTransactions.accountId, ids));
+
+  const deletedRows = await db
+    .delete(accounts)
+    .where(inArray(accounts.id, ids))
+    .returning();
+
+  const deletedIds = deletedRows.map((r) => r.id);
+  const notFound = ids.filter((id) => !deletedIds.includes(id));
+
+  // Invalidate pool for every affected provider (dedup)
+  const affectedProviders = new Set(deletedRows.map((r) => r.provider));
+  for (const provider of affectedProviders) {
+    pool.invalidate(provider as ProviderName);
+  }
+
+  // Per-id WS broadcast so the dashboard can drop rows individually
+  for (const id of deletedIds) {
+    broadcast({ type: "account_deleted", data: { id } });
+  }
+
+  return c.json({
+    success: true,
+    deleted: deletedIds,
+    notFound,
+    totalDeleted: deletedIds.length,
+  });
+});
+
+/**
+ * GET /api/accounts/canva/teams/:id
+ *
+ * List the Canva teams (brands) a given account is a member of. Returns
+ * `{ ok: true, brands: [{ id, displayName, personal, memberCount, plan }] }`.
+ *
+ * Wrapped under `/canva/teams/:id` (not `/:id/canva/teams`) so it sits in
+ * the static-prefix bucket and never collides with `GET /:id`.
+ */
+accountsRouter.get("/canva/teams/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "invalid id" }, 400);
+  }
+
+  const { listCanvaTeams } = await import("../auth/canva-team");
+  const result = await listCanvaTeams(id);
+
+  if (!result.ok) {
+    const status = result.code === "input_invalid"
+      ? 400
+      : result.code === "session_expired"
+        ? 401
+        : 502;
+    return c.json({ error: result.error, code: result.code }, status);
+  }
+
+  return c.json({
+    ok: true,
+    accountId: id,
+    brands: result.brands || [],
+    count: (result.brands || []).length,
+  });
+});
+
+/**
+ * POST /api/accounts/canva/switch/:id
+ *
+ * Switch the active brand (CB cookie) for a Canva account. Body:
+ *   { "target_brand_id": "BAHK3S9zIOo" }
+ *
+ * Returns `{ ok: true, previous_brand_id, brand_id }` on success.
+ * The account must already be a member of `target_brand_id` — the
+ * Python script will detect a no-op (CB unchanged) and report
+ * `switch_failed`.
+ */
+accountsRouter.post("/canva/switch/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "invalid id" }, 400);
+  }
+
+  let body: { target_brand_id?: string };
+  try {
+    body = await c.req.json<{ target_brand_id: string }>();
+  } catch {
+    return c.json({ error: "invalid json body" }, 400);
+  }
+
+  const targetBrandId = String(body?.target_brand_id || "").trim();
+  if (!targetBrandId || !/^BA[A-Za-z0-9_\-]{8,}$/.test(targetBrandId)) {
+    return c.json(
+      { error: "target_brand_id required (shape BA…)", code: "input_invalid" },
+      400,
+    );
+  }
+
+  const { switchCanvaBrand } = await import("../auth/canva-team");
+  const result = await switchCanvaBrand(id, targetBrandId);
+
+  if (!result.ok) {
+    const status = result.code === "input_invalid"
+      ? 400
+      : result.code === "session_expired"
+        ? 401
+        : 502;
+    return c.json(
+      { error: result.error, code: result.code },
+      status,
+    );
+  }
+
+  return c.json({
+    ok: true,
+    accountId: id,
+    previous_brand_id: result.previous_brand_id,
+    brand_id: result.brand_id,
+  });
 });
 
 /**

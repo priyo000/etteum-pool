@@ -377,6 +377,41 @@ export async function deleteAccount(id: number) {
   return fetchApi(`/api/accounts/${id}`, { method: "DELETE" });
 }
 
+/**
+ * Atomically delete many accounts in one request. Server cap: 500 ids.
+ * Returns { deleted: number[], notFound: number[], totalDeleted }.
+ */
+export async function bulkDeleteAccounts(ids: number[]) {
+  return fetchApi<{ success: boolean; deleted: number[]; notFound: number[]; totalDeleted: number }>(
+    "/api/accounts/bulk-delete",
+    {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    },
+  );
+}
+
+/**
+ * Update editable fields on a single account. The server-side endpoint
+ * accepts a partial body; only fields you pass are persisted.
+ */
+export interface AccountPatch {
+  status?: "active" | "exhausted" | "error" | "pending";
+  enabled?: boolean;
+  password?: string;
+  quotaLimit?: number;
+  quotaRemaining?: number;
+  quotaResetAt?: string;
+  errorMessage?: string | null;
+}
+
+export async function updateAccount(id: number, patch: AccountPatch) {
+  return fetchApi(`/api/accounts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export async function toggleAccountEnabled(id: number, enabled?: boolean) {
   return fetchApi<{ id: number; enabled: boolean; status: string; provider: string }>(
     `/api/accounts/${id}/toggle`,
@@ -416,6 +451,69 @@ export async function loginAllAccounts(options?: { headless?: boolean; concurren
     method: "POST",
     body: JSON.stringify(options || {}),
   });
+}
+
+/**
+ * Bulk-join Canva accounts into a team via invite link.
+ * Fire-and-forget: server returns 202 and broadcasts progress over WS as
+ * `canva_join_progress` (per account) and `canva_join_completed` (final).
+ */
+export async function joinCanvaTeam(params: {
+  invite_url: string;
+  account_ids: number[];
+  on_existing?: "switch" | "skip" | "add";
+  headless?: boolean;
+  /** Worker pool size, 1..5 (server clamps). Default 1. */
+  concurrency?: number;
+}) {
+  return fetchApi("/api/accounts/canva/join-team", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+/** A single brand (team or personal workspace) the user belongs to. */
+export interface CanvaBrand {
+  id: string;
+  brandname: string;
+  displayName: string;
+  personal: boolean;
+  memberCount: number;
+  /** Plan code: "A" = free/personal, "L" = team/Pro, etc. */
+  plan: string;
+}
+
+/**
+ * List the Canva teams (brands) a single account is a member of.
+ * Server proxies to Canva's `findbyuser` endpoint.
+ */
+export async function fetchCanvaTeams(accountId: number) {
+  return fetchApi<{
+    ok: boolean;
+    accountId: number;
+    brands: CanvaBrand[];
+    count: number;
+  }>(`/api/accounts/canva/teams/${accountId}`);
+}
+
+/**
+ * Switch a Canva account's active brand (team context). The pool will
+ * subsequently use the new brand's quota for inference.
+ */
+export async function switchCanvaBrand(accountId: number, targetBrandId: string) {
+  return fetchApi<{
+    ok: boolean;
+    previous_brand_id?: string;
+    brand_id: string;
+  }>(`/api/accounts/canva/switch/${accountId}`, {
+    method: "POST",
+    body: JSON.stringify({ target_brand_id: targetBrandId }),
+  });
+}
+
+/** Fetch a single account row by id. */
+export async function fetchAccount(id: number) {
+  return fetchApi<any>(`/api/accounts/${id}`);
 }
 
 export async function openPanel(id: number) {

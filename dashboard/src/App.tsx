@@ -7,6 +7,8 @@ import { isAuthenticated, validateApiKey, logout } from "./lib/api";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Accounts = lazy(() => import("./pages/Accounts"));
 const AccountList = lazy(() => import("./pages/AccountList"));
+const AccountsAll = lazy(() => import("./pages/AccountsAll"));
+const CanvaAccountDetail = lazy(() => import("./pages/CanvaAccountDetail"));
 const Models = lazy(() => import("./pages/Models"));
 const ApiKey = lazy(() => import("./pages/ApiKey"));
 const Requests = lazy(() => import("./pages/Requests"));
@@ -68,8 +70,10 @@ export default function App() {
       <Routes>
         <Route element={<Layout onLogout={handleLogout} />}>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/accounts" element={<Accounts />} />
-          <Route path="/accounts/:provider" element={<AccountList />} />
+              <Route path="/accounts" element={<Accounts />} />
+              <Route path="/accounts/all" element={<AccountsAll />} />
+              <Route path="/accounts/canva/:id" element={<CanvaAccountDetail />} />
+              <Route path="/accounts/:provider" element={<AccountList />} />
           <Route path="/models" element={<Models />} />
           <Route path="/api-key" element={<ApiKey />} />
           <Route path="/requests" element={<Requests />} />

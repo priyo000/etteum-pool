@@ -62,39 +62,62 @@ rotate_log() {
 
 do_start() {
   if pid=$(running_pid); then
-    echo "✅ etteum already running (PID $pid)"
+    echo "? etteum already running (PID $pid)"
     echo "   Backend:   http://localhost:$API_PORT"
     echo "   Dashboard: http://localhost:$DASH_PORT"
     return 0
   fi
 
   if port_in_use "$API_PORT"; then
-    echo "❌ Port $API_PORT already in use by another process. Aborting."
-    echo "   (poolprox3 defaults to 1930/1931 — check 'ss -tlnp | grep $API_PORT')"
+    echo "? Port $API_PORT already in use by another process. Aborting."
+    echo "   (poolprox3 defaults to 1930/1931 - check 'ss -tlnp | grep $API_PORT')"
     return 1
   fi
   if port_in_use "$DASH_PORT"; then
-    echo "❌ Port $DASH_PORT already in use by another process. Aborting."
+    echo "? Port $DASH_PORT already in use by another process. Aborting."
     return 1
   fi
 
   rotate_log
-  echo "Starting etteum (poolprox3)..."
+
+  # Detect --watch / --dev / -w flag → run in dev mode (hot-reload).
+  # We forward the flag to production.ts which delegates to start.ts.
+  local watch_flag=""
+  for arg in "$@"; do
+    case "$arg" in
+      --watch|--dev|-w) watch_flag="--watch" ;;
+    esac
+  done
+
+  if [ -n "$watch_flag" ]; then
+    echo "Starting etteum in DEV MODE (hot-reload)..."
+  else
+    echo "Starting etteum (poolprox3)..."
+  fi
+
   cd "$PROJECT_DIR"
   # setsid → new session/process group so 'stop' can target ONLY our subtree.
-  setsid bun scripts/production.ts --skip-build >> "$LOG_FILE" 2>&1 &
+  if [ -n "$watch_flag" ]; then
+    setsid bun scripts/production.ts --skip-build "$watch_flag" >> "$LOG_FILE" 2>&1 &
+  else
+    setsid bun scripts/production.ts --skip-build >> "$LOG_FILE" 2>&1 &
+  fi
   local pid=$!
   echo "$pid" > "$PID_FILE"
   sleep 1.5
 
   if kill -0 "$pid" 2>/dev/null; then
-    echo "✅ etteum started (PID $pid)"
+    if [ -n "$watch_flag" ]; then
+      echo "? etteum started in DEV MODE (PID $pid)"
+    else
+      echo "? etteum started (PID $pid)"
+    fi
     echo "   Backend:   http://localhost:$API_PORT"
     echo "   Dashboard: http://localhost:$DASH_PORT"
     echo "   Logs:      etteum logs"
   else
     rm -f "$PID_FILE"
-    echo "❌ Failed to start. Last log lines:"
+    echo "? Failed to start. Last log lines:"
     tail -n 15 "$LOG_FILE" 2>/dev/null
     return 1
   fi
@@ -140,29 +163,36 @@ usage() {
   cat <<EOF
 etteum — PoolProx3 management CLI
 
-Usage: etteum <command>
+Usage: etteum <command> [flags]
 
-  start      Start backend + dashboard in the background (ports $API_PORT/$DASH_PORT)
-  stop       Stop this instance only (process-group scoped, safe for other instances)
-  restart    Stop then start
-  status     Show PID, group, and whether ports are listening
-  logs [N]   Follow logs, or print last N lines
-  build      Rebuild dashboard then restart
-  dev        Run in foreground with Vite HMR (Ctrl-C to quit)
-  migrate    Run database migrations
+  start [--watch|-w]   Start backend + dashboard in the background (ports $API_PORT/$DASH_PORT)
+                       --watch enables hot-reload (backend bun --hot + Vite HMR)
+  stop                 Stop this instance only (process-group scoped, safe for other instances)
+  restart [--watch]    Stop then start (preserves --watch flag)
+  status               Show PID, group, and whether ports are listening
+  logs [N]             Follow logs, or print last N lines
+  build                Rebuild dashboard then restart
+  dev                  Foreground dev-mode (alias of: start --watch, no daemon)
+  migrate              Run database migrations
 EOF
 }
 
 case "${1:-}" in
-  start)   do_start ;;
+  start)
+    shift
+    do_start "$@"
+    ;;
   stop)    do_stop ;;
-  restart) do_stop; sleep 1; do_start ;;
+  restart)
+    shift
+    do_stop; sleep 1; do_start "$@"
+    ;;
   status)  do_status ;;
   logs)
     if [ -n "${2:-}" ]; then tail -n "$2" "$LOG_FILE"; else tail -f "$LOG_FILE"; fi
     ;;
   build)
-    echo "🔨 Building dashboard..."
+    echo "?? Building dashboard..."
     (cd "$PROJECT_DIR/dashboard" && bun run build)
     do_stop; sleep 1; do_start
     ;;

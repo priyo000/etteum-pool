@@ -97,6 +97,8 @@ export default function ImageStudio() {
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
   const [n, setN] = useState<number>(1);
 
+  const [mode, setMode] = useState<"assist" | "direct">("assist");
+  const [directPrompt, setDirectPrompt] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -310,18 +312,27 @@ export default function ImageStudio() {
   }
 
   async function generate() {
-    let prompt = finalPrompt || input.trim();
-    if (!prompt) {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (m && m.role === "user") {
-          prompt = m.content;
-          break;
+    let prompt = "";
+    if (mode === "direct") {
+      prompt = directPrompt.trim();
+    } else {
+      prompt = finalPrompt || input.trim();
+      if (!prompt) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i];
+          if (m && m.role === "user") {
+            prompt = m.content;
+            break;
+          }
         }
       }
     }
     if (!prompt) {
-      setError("Belum ada prompt — chat dulu untuk dapat final prompt, atau ketik manual di kolom input.");
+      if (mode === "direct") {
+        setError("Belum ada prompt — tulis deskripsi gambar dulu.");
+      } else {
+        setError("Belum ada prompt — chat dulu untuk dapat final prompt, atau ketik manual di kolom input.");
+      }
       return;
     }
     setGenerating(true);
@@ -381,6 +392,34 @@ export default function ImageStudio() {
               AI prompt assistant untuk Canva Magic Media
             </p>
           </div>
+        </div>
+
+        {/* Mode Toggle */}
+        <div className="flex items-center rounded-lg border border-[var(--border)] bg-[var(--card)] p-0.5">
+          <button
+            type="button"
+            onClick={() => setMode("assist")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              mode === "assist"
+                ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            <Bot className="h-3.5 w-3.5" />
+            AI Assist
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("direct")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              mode === "direct"
+                ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Direct
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -510,16 +549,24 @@ export default function ImageStudio() {
           <div className="flex items-center justify-between border-b border-[var(--border)] bg-gradient-to-r from-[var(--card)] to-[var(--card)]/50 px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--primary)]/10">
-                <Bot className="h-4 w-4 text-[var(--primary)]" />
+                {mode === "direct" ? (
+                  <Sparkles className="h-4 w-4 text-[var(--primary)]" />
+                ) : (
+                  <Bot className="h-4 w-4 text-[var(--primary)]" />
+                )}
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-[var(--foreground)]">Prompt Assistant</h2>
+                <h2 className="text-sm font-semibold text-[var(--foreground)]">
+                  {mode === "direct" ? "Direct Prompt" : "Prompt Assistant"}
+                </h2>
                 <p className="text-[10px] text-[var(--muted-foreground)]">
-                  {messages.length === 0 ? "Siap bantu" : `${messages.length} pesan`}
+                  {mode === "direct"
+                    ? "Tulis prompt lalu generate"
+                    : messages.length === 0 ? "Siap bantu" : `${messages.length} pesan`}
                 </p>
               </div>
             </div>
-            {messages.length > 0 && (
+            {mode === "assist" && messages.length > 0 && (
               <button
                 onClick={resetChat}
                 title="Reset chat"
@@ -532,6 +579,43 @@ export default function ImageStudio() {
 
           {/* Chat messages */}
           <div ref={chatScrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+            {mode === "direct" ? (
+              <div className="flex h-full flex-col">
+                <label className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Prompt Description
+                </label>
+                <textarea
+                  value={directPrompt}
+                  onChange={(e) => setDirectPrompt(e.target.value)}
+                  placeholder="Describe your image in English... (e.g., 'a serene mountain landscape at sunset, photorealistic, cinematic lighting')"
+                  className="flex-1 resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors focus:border-[var(--primary)]/40 focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
+                />
+                <Button
+                  className="mt-3 w-full gap-2 bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
+                  onClick={generate}
+                  disabled={!directPrompt.trim() || generating}
+                  size="sm"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      Generate {genType === "video" ? "Video" : `${n} ${n === 1 ? "Image" : "Images"}`}
+                      {genType !== "video" && (
+                        <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-mono">
+                          {aspectRatio}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </Button>
+              </div>
+            ) : (
+            <>
             {messages.length === 0 && !thinking && (
               <div className="flex h-full flex-col items-center justify-center px-4 text-center">
                 <div className="relative mb-4">
@@ -624,8 +708,10 @@ export default function ImageStudio() {
                 </div>
               </div>
             )}
+            </>
+            )}
 
-            {finalPrompt && (
+            {mode === "assist" && finalPrompt && (
               <div className="rounded-lg border border-[var(--primary)]/30 bg-gradient-to-br from-[var(--primary)]/10 via-[var(--primary)]/5 to-transparent p-3">
                 <div className="mb-1.5 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -678,38 +764,40 @@ export default function ImageStudio() {
           )}
 
           {/* Input */}
-          <div className="border-t border-[var(--border)] bg-[var(--card)] p-3">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder="Tulis ide gambarmu... (Enter to send, Shift+Enter for newline)"
-              className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors focus:border-[var(--primary)]/40 focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
-              rows={2}
-            />
-            <Button
-              className="mt-2 w-full gap-2"
-              onClick={send}
-              disabled={!input.trim() || thinking}
-            >
-              {thinking ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Thinking...
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4" />
-                  Send
-                </>
-              )}
-            </Button>
-          </div>
+          {mode === "assist" && (
+            <div className="border-t border-[var(--border)] bg-[var(--card)] p-3">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder="Tulis ide gambarmu... (Enter to send, Shift+Enter for newline)"
+                className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors focus:border-[var(--primary)]/40 focus:outline-none focus:ring-1 focus:ring-[var(--ring)]"
+                rows={2}
+              />
+              <Button
+                className="mt-2 w-full gap-2"
+                onClick={send}
+                disabled={!input.trim() || thinking}
+              >
+                {thinking ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Thinking...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Send
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
           </div>
         </div>
 
@@ -757,8 +845,9 @@ export default function ImageStudio() {
                     Galeri masih kosong
                   </p>
                   <p className="text-xs leading-relaxed text-[var(--muted-foreground)]">
-                    Mulai chat di kiri lalu klik tombol Generate. Hasil akan muncul di sini dan
-                    tersimpan otomatis.
+                    {mode === "direct"
+                      ? "Tulis prompt di kiri lalu klik Generate. Hasil akan muncul di sini dan tersimpan otomatis."
+                      : "Mulai chat di kiri lalu klik tombol Generate. Hasil akan muncul di sini dan tersimpan otomatis."}
                   </p>
                 </div>
               </div>

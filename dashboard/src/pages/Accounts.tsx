@@ -11,7 +11,7 @@ import {
   DialogTitle as DTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Plus, Upload, RefreshCw, Play, RotateCcw, Flame, ChevronDown, Loader2, Key, Pencil, Trash2, Zap, FlaskConical, Lock, Shield } from "lucide-react";
+import { Plus, Upload, RefreshCw, Play, RotateCcw, Flame, ChevronDown, Loader2, Key, Pencil, Trash2, Zap, FlaskConical, Lock, Shield, Users, Table2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { useWsEvent } from "@/hooks/useWebSocket";
@@ -42,6 +42,7 @@ import {
   type AutoWarmupStatus,
   type ByokProvider,
 } from "@/lib/api";
+import { JoinTeamModal } from "@/components/canva/JoinTeamModal";
 
 type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "codex" | "qoder";
 
@@ -79,6 +80,7 @@ export default function Accounts() {
 
   const [addForm, setAddForm] = useState({ email: "", password: "", provider: "kiro" as Provider, browserEngine: "camoufox", headless: false });
   const [addDialogProvider, setAddDialogProvider] = useState<Provider | null>(null);
+  const [joinTeamOpen, setJoinTeamOpen] = useState(false);
   const [instantTokens, setInstantTokens] = useState("");
   const [cookieValue, setCookieValue] = useState("");
   const [bulkText, setBulkText] = useState("");
@@ -757,6 +759,9 @@ export default function Accounts() {
           <p className="text-sm text-[var(--muted-foreground)] mt-1">Manage provider accounts</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/accounts/all")}>
+            <Table2 className="w-4 h-4 mr-2" /> View all (table)
+          </Button>
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
           </Button>
@@ -894,6 +899,21 @@ export default function Accounts() {
                   <RotateCcw className="mr-1 h-4 w-4" /> Retry
                 </Button>
               </div>
+
+              {/* Canva-only: Join Team */}
+              {stat.provider === "canva" && (
+                <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setJoinTeamOpen(true)}
+                    disabled={accounts.filter((a) => a.provider === "canva").length === 0}
+                  >
+                    <Users className="mr-1 h-4 w-4" /> Join Team via Invite Link
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -1475,6 +1495,17 @@ export default function Accounts() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Canva: Join Team modal */}
+      <JoinTeamModal
+        open={joinTeamOpen}
+        onOpenChange={setJoinTeamOpen}
+        canvaAccounts={accounts
+          .filter((a) => a.provider === "canva")
+          .map((a) => ({ id: a.id, email: a.email, status: a.status }))}
+        onSuccess={(msg) => showSuccess(msg)}
+        onError={(err) => showError(err)}
+      />
     </div>
   );
 }

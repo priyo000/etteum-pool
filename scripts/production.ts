@@ -12,6 +12,7 @@
  *   bun run production
  *   bun run scripts/production.ts
  *   bun run scripts/production.ts --skip-build
+ *   bun run scripts/production.ts --watch    # delegates to dev script
  */
 
 // import.meta.url.pathname encodes spaces as %20 on Windows, which breaks
@@ -25,6 +26,31 @@ if (process.platform === "win32" && root.startsWith("/") && root.length > 2 && r
 const dashboardDir = `${root}/dashboard`;
 const dashboardDist = `${dashboardDir}/dist/index.html`;
 const skipBuild = process.argv.includes("--skip-build");
+
+// `--watch` / `--dev` / `-w` flags pivot to the dev (hot-reload) script
+// instead of the build-once production flow. We delegate by exec'ing
+// scripts/start.ts so this file stays focused on production specifics.
+const watchMode =
+  process.argv.includes("--watch") ||
+  process.argv.includes("--dev") ||
+  process.argv.includes("-w");
+
+if (watchMode) {
+  // Hand off to the dev script. Use spawnSync-replace pattern so signal
+  // handling and output remain attached to the parent terminal.
+  const devScript = `${root}/scripts/start.ts`;
+  const devProc = Bun.spawn([process.execPath, devScript], {
+    cwd: root,
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
+    env: process.env,
+  });
+  process.on("SIGINT", () => { try { devProc.kill(); } catch {} });
+  process.on("SIGTERM", () => { try { devProc.kill(); } catch {} });
+  const code = await devProc.exited;
+  process.exit(code ?? 0);
+}
 
 const port = process.env.PORT || "1930";
 const dashboardPort = process.env.DASHBOARD_PORT || "1931";

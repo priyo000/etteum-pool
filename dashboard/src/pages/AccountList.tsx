@@ -4,19 +4,30 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Search, Trash2, RefreshCw, RotateCcw, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, Search, Trash2, RefreshCw, RotateCcw, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, XCircle, Pencil, Eye } from "lucide-react";
 import { formatDateTimeID } from "@/lib/utils";
 import { useTimedMessage } from "@/hooks/useTimedMessage";
 import { useWsEvent } from "@/hooks/useWebSocket";
+import { useSelection } from "@/hooks/useSelection";
+import { MultiStatusFilter, type AccountStatus, type EnabledFilter } from "@/components/accounts/MultiStatusFilter";
+import { QuotaRangeFilter } from "@/components/accounts/QuotaRangeFilter";
+import { BulkActionBar } from "@/components/accounts/BulkActionBar";
+import { EditAccountModal, type EditAccountTarget } from "@/components/accounts/EditAccountModal";
+import { SavedPresetsBar } from "@/components/accounts/SavedPresetsBar";
+import { exportAccountsCSV, exportAccountsJSON } from "@/lib/account-export";
+import type { AccountFilterState } from "@/lib/account-presets";
 import {
+  bulkDeleteAccounts,
   deleteAccount,
   fetchAccounts,
   loginAccount,
   loginAccounts,
   openPanel,
+  refreshAccountQuota,
   toggleAccountEnabled,
   toggleAllAccounts,
   warmupAccount,
+  warmupAccounts,
   warmupAllAccounts,
 } from "@/lib/api";
 
@@ -137,9 +148,18 @@ export default function AccountList() {
   const perPage = 25;
   const { message, setMessage: setTimedMessage, clearMessage } = useTimedMessage<string>(null, 4000);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
+  // Multi-status filter — empty array means "all".
+  const [statuses, setStatuses] = useState<AccountStatus[]>([]);
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
+  const [quotaMin, setQuotaMin] = useState<number | undefined>(undefined);
+  const [quotaMax, setQuotaMax] = useState<number | undefined>(undefined);
   const [sortKey, setSortKey] = useState<SortKey>("email");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Edit modal state
+  const [editTarget, setEditTarget] = useState<EditAccountTarget | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  // Bulk action busy flag (disables destructive ops while in flight)
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -235,10 +255,149 @@ export default function AccountList() {
     }
   }
 
+  /* ── Bulk action handlers ───────────────────────────────────── */
+
+  function selectedIdsOrThrow(): number[] {
+    const ids = selection.selectedIds;
+    if (ids.length === 0) {
+      showError(new Error("No accounts selected"));
+      return [];
+    }
+    return ids;
+  }
+
+  async function handleBulkDelete() {
+    const ids = selectedIdsOrThrow();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await bulkDeleteAccounts(ids);
+      showSuccess(`Deleted ${res.totalDeleted} account${res.totalDeleted === 1 ? "" : "s"}.`);
+      selection.clearAll();
+      await load();
+    } catch (err) { showError(err); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function handleBulkWarmup() {
+    const ids = selectedIdsOrThrow();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await warmupAccounts(ids) as any;
+      showSuccess(res?.message || `Queued ${ids.length} for warmup.`);
+    } catch (err) { showError(err); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function handleBulkLogin() {
+    const ids = selectedIdsOrThrow();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await loginAccounts(ids) as any;
+      showSuccess(res?.message || `Queued ${ids.length} for login.`);
+    } catch (err) { showError(err); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function handleBulkToggle(enabled: boolean) {
+    const ids = selectedIdsOrThrow();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      // No bulk-toggle endpoint; iterate. Optimistic UI update.
+      setAccounts((prev) => prev.map((a) => ids.includes(a.id) ? { ...a, enabled } : a));
+      await Promise.allSettled(ids.map((id) => toggleAccountEnabled(id, enabled)));
+      showSuccess(`${enabled ? "Enabled" : "Disabled"} ${ids.length} account${ids.length === 1 ? "" : "s"}.`);
+    } catch (err) { showError(err); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function handleBulkRefreshQuota() {
+    const ids = selectedIdsOrThrow();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      // No bulk endpoint — fan out (capped concurrency to be polite).
+      const limit = 5;
+      let i = 0;
+      const workers = Array.from({ length: limit }, async () => {
+        while (i < ids.length) {
+          const id = ids[i++];
+          try { await refreshAccountQuota(id); } catch {}
+        }
+      });
+      await Promise.all(workers);
+      showSuccess(`Refreshed quota for ${ids.length} account${ids.length === 1 ? "" : "s"}.`);
+      await load();
+    } catch (err) { showError(err); }
+    finally { setBulkBusy(false); }
+  }
+
+  function handleBulkExportCSV() {
+    const items = selection.count > 0 ? selection.selectedItems : filtered;
+    if (items.length === 0) { showError(new Error("Nothing to export")); return; }
+    exportAccountsCSV(items as any, provider || "accounts");
+  }
+
+  function handleBulkExportJSON() {
+    const items = selection.count > 0 ? selection.selectedItems : filtered;
+    if (items.length === 0) { showError(new Error("Nothing to export")); return; }
+    exportAccountsJSON(items as any, provider || "accounts");
+  }
+
+  /* ── Edit modal ─────────────────────────────────────────────── */
+
+  function openEdit(account: Account) {
+    setEditTarget({
+      id: account.id,
+      email: account.email,
+      provider: account.provider,
+      status: account.status,
+      enabled: account.enabled,
+      quotaLimit: account.quotaLimit ?? null,
+      quotaRemaining: account.quotaRemaining ?? null,
+      errorMessage: account.errorMessage ?? null,
+    });
+    setEditOpen(true);
+  }
+
+  /* ── Preset apply ───────────────────────────────────────────── */
+
+  function applyPreset(state: AccountFilterState) {
+    setSearch(state.search ?? "");
+    setStatuses((state.statuses as AccountStatus[]) ?? []);
+    setEnabledFilter((state.enabledFilter as EnabledFilter) ?? "all");
+    setQuotaMin(state.quotaMin);
+    setQuotaMax(state.quotaMax);
+  }
+
+  const currentFilterState: AccountFilterState = {
+    search,
+    statuses,
+    enabledFilter,
+    quotaMin,
+    quotaMax,
+  };
+
   const filtered = useMemo(() => {
     let result = accounts.filter((a) => a.email.toLowerCase().includes(search.toLowerCase()));
-    if (statusFilter !== "all") {
-      result = result.filter((a) => a.status === statusFilter);
+    if (statuses.length > 0 && statuses.length < 5) {
+      // Empty or full set = no filter; partial = honor it.
+      const set = new Set(statuses);
+      result = result.filter((a) => set.has(a.status as AccountStatus));
+    }
+    if (enabledFilter === "enabled") {
+      result = result.filter((a) => a.enabled !== false);
+    } else if (enabledFilter === "disabled") {
+      result = result.filter((a) => a.enabled === false);
+    }
+    if (quotaMin !== undefined) {
+      result = result.filter((a) => (a.quotaRemaining ?? 0) >= quotaMin);
+    }
+    if (quotaMax !== undefined) {
+      result = result.filter((a) => (a.quotaRemaining ?? 0) <= quotaMax);
     }
     result.sort((a, b) => {
       let cmp = 0;
@@ -265,9 +424,35 @@ export default function AccountList() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return result;
-  }, [accounts, search, statusFilter, sortKey, sortDir]);
+  }, [accounts, search, statuses, enabledFilter, quotaMin, quotaMax, sortKey, sortDir]);
 
-  useEffect(() => { setPage(1); }, [search, provider, statusFilter]);
+  useEffect(() => { setPage(1); }, [search, provider, statuses, enabledFilter, quotaMin, quotaMax]);
+
+  // Per-status counts for the filter chips.
+  const statusCounts = useMemo(() => {
+    const counts: Partial<Record<AccountStatus | "all", number>> = { all: accounts.length };
+    for (const a of accounts) {
+      const s = a.status as AccountStatus;
+      counts[s] = (counts[s] ?? 0) + 1;
+    }
+    return counts;
+  }, [accounts]);
+
+  // Data range hint for QuotaRangeFilter
+  const quotaRange = useMemo(() => {
+    if (accounts.length === 0) return { min: undefined, max: undefined };
+    let min = Infinity;
+    let max = -Infinity;
+    for (const a of accounts) {
+      const q = a.quotaRemaining ?? 0;
+      if (q < min) min = q;
+      if (q > max) max = q;
+    }
+    return { min, max };
+  }, [accounts]);
+
+  // Selection hook over the filtered (visible) list
+  const selection = useSelection(filtered, (a) => a.id);
 
   const errorCount = accounts.filter((a) => a.status === "error").length;
   const enabledCount = accounts.filter((a) => a.enabled !== false).length;
@@ -313,25 +498,33 @@ export default function AccountList() {
       )}
 
       {/* Search & Filter */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative w-full sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" />
-          <Input placeholder="Search accounts..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" />
+            <Input placeholder="Search accounts..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          </div>
+          <MultiStatusFilter
+            statuses={statuses}
+            onStatusesChange={setStatuses}
+            enabledFilter={enabledFilter}
+            onEnabledFilterChange={setEnabledFilter}
+            counts={statusCounts}
+          />
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {(["all", "active", "exhausted", "error", "pending", "disabled"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
-                statusFilter === s
-                  ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--foreground)]"
-                  : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--primary)]/50"
-              }`}
-            >
-              {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <QuotaRangeFilter
+            min={quotaMin}
+            max={quotaMax}
+            onChange={({ min, max }) => { setQuotaMin(min); setQuotaMax(max); }}
+            dataMin={quotaRange.min}
+            dataMax={quotaRange.max}
+          />
+          <SavedPresetsBar
+            scope="per-provider"
+            currentState={currentFilterState}
+            onApply={applyPreset}
+          />
         </div>
       </div>
 
@@ -342,6 +535,16 @@ export default function AccountList() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[var(--border)]">
+                  <th className="w-10 p-4">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      checked={selection.allSelected}
+                      ref={(el) => { if (el) el.indeterminate = selection.someSelected; }}
+                      onChange={selection.toggleAll}
+                      className="h-4 w-4 rounded border-[var(--border)] accent-[var(--primary)]"
+                    />
+                  </th>
                   <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4 cursor-pointer select-none hover:text-[var(--foreground)]" onClick={() => handleSort("email")}>
                     <span className="inline-flex items-center">Email<SortIcon column="email" /></span>
                   </th>
@@ -363,10 +566,34 @@ export default function AccountList() {
               <tbody>
                 {filtered.slice((page - 1) * perPage, page * perPage).map((account) => {
                   const isEnabled = account.enabled !== false;
+                  const isSelected = selection.isSelected(account.id);
                   return (
-                  <tr key={account.id} className={`border-b border-[var(--border)] last:border-0 hover:bg-[var(--secondary)]/50 ${isEnabled ? "" : "opacity-50"}`}>
+                  <tr
+                    key={account.id}
+                    className={`border-b border-[var(--border)] last:border-0 hover:bg-[var(--secondary)]/50 ${isEnabled ? "" : "opacity-50"} ${isSelected ? "bg-[var(--primary)]/5" : ""}`}
+                  >
+                    <td className="w-10 p-4">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${account.email}`}
+                        checked={isSelected}
+                        onChange={() => selection.toggle(account.id)}
+                        className="h-4 w-4 rounded border-[var(--border)] accent-[var(--primary)]"
+                      />
+                    </td>
                     <td className="p-4 text-sm text-[var(--foreground)]">
-                      <div>{account.email}</div>
+                      {account.provider === "canva" ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/accounts/canva/${account.id}`)}
+                          className="text-left hover:text-[var(--primary)] hover:underline focus:outline-none focus:text-[var(--primary)]"
+                          title="View Canva teams & switch brand"
+                        >
+                          {account.email}
+                        </button>
+                      ) : (
+                        <div>{account.email}</div>
+                      )}
                       {account.errorMessage && <div className="text-xs text-[var(--error)] mt-1 line-clamp-1" title={account.errorMessage}>{account.errorMessage}</div>}
                     </td>
                     <td className="p-4"><Badge variant={statusVariants[account.status]}>{account.status}</Badge></td>
@@ -397,6 +624,11 @@ export default function AccountList() {
                     <td className="p-4 text-xs text-[var(--muted-foreground)] hidden md:table-cell">{formatDate(account.lastLoginAt || account.lastUsedAt)}</td>
                     <td className="p-4">
                       <div className="flex gap-1">
+                        {account.provider === "canva" && (
+                          <Button variant="ghost" size="icon" onClick={() => navigate(`/accounts/canva/${account.id}`)} title="View Canva teams">
+                            <Eye className="w-4 h-4 text-[var(--info)]" />
+                          </Button>
+                        )}
                         {(account.provider.startsWith("kiro") || account.provider === "qoder") && (
                           <Button variant="ghost" size="icon" onClick={() => handleOpenPanel(account.id)} title={`Open ${account.provider === "qoder" ? "Qoder" : "Kiro"} Panel`}>
                             <ExternalLink className="w-4 h-4 text-[var(--info)]" />
@@ -408,6 +640,9 @@ export default function AccountList() {
                         <Button variant="ghost" size="icon" onClick={() => handleLogin(account.id)} title="Queue login" disabled={account.status !== "pending" && account.status !== "error"}>
                           <RotateCcw className="w-4 h-4" />
                         </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(account)} title="Edit">
+                          <Pencil className="w-4 h-4 text-[var(--info)]" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleDelete(account.id)} title="Delete">
                           <Trash2 className="w-4 h-4 text-[var(--error)]" />
                         </Button>
@@ -417,7 +652,7 @@ export default function AccountList() {
                   );
                 })}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan={6} className="p-8 text-center text-sm text-[var(--muted-foreground)]">No accounts found</td></tr>
+                  <tr><td colSpan={7} className="p-8 text-center text-sm text-[var(--muted-foreground)]">No accounts found</td></tr>
                 )}
               </tbody>
             </table>
@@ -436,6 +671,31 @@ export default function AccountList() {
           )}
         </CardContent>
       </Card>
+
+      {/* Bulk action bar — sticky bottom, shown when count > 0 */}
+      <BulkActionBar
+        count={selection.count}
+        totalCount={selection.totalCount}
+        onClear={selection.clearAll}
+        busy={bulkBusy}
+        onDelete={handleBulkDelete}
+        onWarmup={handleBulkWarmup}
+        onLogin={handleBulkLogin}
+        onEnable={() => handleBulkToggle(true)}
+        onDisable={() => handleBulkToggle(false)}
+        onRefreshQuota={handleBulkRefreshQuota}
+        onExportCSV={handleBulkExportCSV}
+        onExportJSON={handleBulkExportJSON}
+      />
+
+      {/* Inline edit modal */}
+      <EditAccountModal
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        account={editTarget}
+        onSaved={() => { showSuccess(`Account ${editTarget?.email} updated`); load(); }}
+        onError={(err) => showError(err)}
+      />
     </div>
   );
 }
