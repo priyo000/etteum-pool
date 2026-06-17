@@ -1,0 +1,10 @@
+name = "etteum-relay"
+main = "worker.ts"
+compatibility_date = "2024-12-01"
+
+# Uncomment to use custom domain:
+# routes = [{ pattern = "relay.yourdomain.com/*", zone_name = "yourdomain.com" }]
+
+[vars]
+# Set via `npx wrangler secret put POOL_URL`
+# POOL_URL = "https://xxx.trycloudflare.com"

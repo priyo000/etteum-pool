@@ -53,9 +53,26 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: Number(process.env.DASHBOARD_PORT) || 1731,
+    // Forward EVERY backend route to the Bun server so the dev frontend
+    // is a transparent client of localhost:PORT (default 1930). Without
+    // these, dev would hit CORS errors or 404s for /v1, /ws, /relay.
     proxy: {
       "/api": {
-        target: "http://localhost:1930",
+        target: `http://localhost:${process.env.PORT || 1930}`,
+        changeOrigin: true,
+      },
+      "/v1": {
+        target: `http://localhost:${process.env.PORT || 1930}`,
+        changeOrigin: true,
+      },
+      "/relay": {
+        target: `http://localhost:${process.env.PORT || 1930}`,
+        changeOrigin: true,
+      },
+      // WebSocket upgrade — needed for live dashboard events.
+      "/ws": {
+        target: `ws://localhost:${process.env.PORT || 1930}`,
+        ws: true,
         changeOrigin: true,
       },
     },

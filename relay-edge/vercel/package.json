@@ -1,0 +1,13 @@
+{
+  "name": "etteum-relay-vercel",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel deploy --prod"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@vercel/node": "^3.0.0",
+    "vercel": "^37.0.0"
+  }
+}

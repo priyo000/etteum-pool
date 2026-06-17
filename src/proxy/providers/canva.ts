@@ -10,6 +10,7 @@ import {
 import type { Account } from "../../db/schema";
 import { config } from "../../config";
 import path from "path";
+import os from "node:os";
 
 interface CanvaTokens {
   caz: string;
@@ -109,7 +110,7 @@ export class CanvaProvider extends BaseProvider {
 
   private async runWorker(input: WorkerInput, timeoutMs: number): Promise<WorkerOutput> {
     // Write input to a temp file to avoid stdin pipe issues with Bun.spawn
-    const tmpFile = `/tmp/canva_worker_${Date.now()}_${Math.random().toString(36).slice(2)}.json`;
+    const tmpFile = path.join(os.tmpdir(), `canva_worker_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
     await Bun.write(tmpFile, JSON.stringify(input));
 
     try {

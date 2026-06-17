@@ -121,6 +121,12 @@ export async function fetchDashboardStats(hours?: number | null, range?: string)
   return fetchApi(`/api/stats${qs ? `?${qs}` : ""}`);
 }
 
+export async function refreshAllAccounts() {
+  return fetchApi<{ message: string; queued: number }>("/api/accounts/refresh-all", {
+    method: "POST",
+  });
+}
+
 export async function fetchAccounts() {
   return fetchApi("/api/accounts");
 }
@@ -371,6 +377,41 @@ export async function deleteAccount(id: number) {
   return fetchApi(`/api/accounts/${id}`, { method: "DELETE" });
 }
 
+/**
+ * Atomically delete many accounts in one request. Server cap: 500 ids.
+ * Returns { deleted: number[], notFound: number[], totalDeleted }.
+ */
+export async function bulkDeleteAccounts(ids: number[]) {
+  return fetchApi<{ success: boolean; deleted: number[]; notFound: number[]; totalDeleted: number }>(
+    "/api/accounts/bulk-delete",
+    {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    },
+  );
+}
+
+/**
+ * Update editable fields on a single account. The server-side endpoint
+ * accepts a partial body; only fields you pass are persisted.
+ */
+export interface AccountPatch {
+  status?: "active" | "exhausted" | "error" | "pending";
+  enabled?: boolean;
+  password?: string;
+  quotaLimit?: number;
+  quotaRemaining?: number;
+  quotaResetAt?: string;
+  errorMessage?: string | null;
+}
+
+export async function updateAccount(id: number, patch: AccountPatch) {
+  return fetchApi(`/api/accounts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export async function toggleAccountEnabled(id: number, enabled?: boolean) {
   return fetchApi<{ id: number; enabled: boolean; status: string; provider: string }>(
     `/api/accounts/${id}/toggle`,
@@ -410,6 +451,69 @@ export async function loginAllAccounts(options?: { headless?: boolean; concurren
     method: "POST",
     body: JSON.stringify(options || {}),
   });
+}
+
+/**
+ * Bulk-join Canva accounts into a team via invite link.
+ * Fire-and-forget: server returns 202 and broadcasts progress over WS as
+ * `canva_join_progress` (per account) and `canva_join_completed` (final).
+ */
+export async function joinCanvaTeam(params: {
+  invite_url: string;
+  account_ids: number[];
+  on_existing?: "switch" | "skip" | "add";
+  headless?: boolean;
+  /** Worker pool size, 1..5 (server clamps). Default 1. */
+  concurrency?: number;
+}) {
+  return fetchApi("/api/accounts/canva/join-team", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+/** A single brand (team or personal workspace) the user belongs to. */
+export interface CanvaBrand {
+  id: string;
+  brandname: string;
+  displayName: string;
+  personal: boolean;
+  memberCount: number;
+  /** Plan code: "A" = free/personal, "L" = team/Pro, etc. */
+  plan: string;
+}
+
+/**
+ * List the Canva teams (brands) a single account is a member of.
+ * Server proxies to Canva's `findbyuser` endpoint.
+ */
+export async function fetchCanvaTeams(accountId: number) {
+  return fetchApi<{
+    ok: boolean;
+    accountId: number;
+    brands: CanvaBrand[];
+    count: number;
+  }>(`/api/accounts/canva/teams/${accountId}`);
+}
+
+/**
+ * Switch a Canva account's active brand (team context). The pool will
+ * subsequently use the new brand's quota for inference.
+ */
+export async function switchCanvaBrand(accountId: number, targetBrandId: string) {
+  return fetchApi<{
+    ok: boolean;
+    previous_brand_id?: string;
+    brand_id: string;
+  }>(`/api/accounts/canva/switch/${accountId}`, {
+    method: "POST",
+    body: JSON.stringify({ target_brand_id: targetBrandId }),
+  });
+}
+
+/** Fetch a single account row by id. */
+export async function fetchAccount(id: number) {
+  return fetchApi<any>(`/api/accounts/${id}`);
 }
 
 export async function openPanel(id: number) {
@@ -794,6 +898,47 @@ export async function deleteByokProvider(id: number): Promise<{ success: boolean
   return fetchApi(`/api/accounts/byok/${id}`, { method: "DELETE" });
 }
 
+// ─── Relay / Tunnel API ──────────────────────────────────────────────────────
+
+export async function fetchTunnelStatus(): Promise<any> {
+  return fetchApi("/api/relay/tunnel");
+}
+
+export async function enableTunnel(port?: number): Promise<any> {
+  return fetchApi("/api/relay/tunnel/enable", {
+    method: "POST",
+    body: JSON.stringify(port ? { port } : {}),
+  });
+}
+
+export async function disableTunnel(): Promise<any> {
+  return fetchApi("/api/relay/tunnel/disable", { method: "POST" });
+}
+
+export async function fetchTunnelDeployUrls(): Promise<any> {
+  return fetchApi("/api/relay/tunnel/deploy");
+}
+
+export async function fetchTunnelTemplate(platform: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/relay/tunnel/template/${platform}`, {
+    headers: {
+      Authorization: `Bearer ${getApiKey()}`,
+    },
+  });
+  return res.text();
+}
+
+export async function saveEdgeRelay(data: { platform: string; url: string; relayKey?: string }): Promise<any> {
+  return fetchApi("/api/relay/tunnel/edge", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteEdgeRelay(): Promise<any> {
+  return fetchApi("/api/relay/tunnel/edge", { method: "DELETE" });
+}
+
 export async function testByokProvider(
   id: number,
   model?: string
@@ -810,4 +955,35 @@ export async function testByokProvider(
     method: "POST",
     body: JSON.stringify(model ? { model } : {})
   });
+}
+
+// ─── Account Testing & Health ─────────────────────────────────────────────────
+
+export async function testAccount(id: number, model?: string): Promise<{
+  success: boolean;
+  latency_ms?: number;
+  diagnosis?: 'AUTH' | '429' | '5XX' | 'NET' | 'RUNTIME' | null;
+  model?: string;
+  error?: string;
+}> {
+  return fetchApi(`/api/accounts/${id}/test`, {
+    method: 'POST',
+    body: JSON.stringify(model ? { model } : {}),
+    timeoutMs: 35_000,
+  });
+}
+
+export async function clearAccountCooldown(id: number): Promise<{ success: boolean; id: number; provider: string; status: string }> {
+  return fetchApi(`/api/accounts/${id}/clear-cooldown`, { method: 'POST' });
+}
+
+export interface ModelsHealthResponse {
+  overall: 'ok' | 'degraded' | 'down';
+  total_active: number;
+  total_accounts: number;
+  providers: Record<string, { active: number; total: number; error: number; exhausted: number; pending: number; disabled: number }>;
+}
+
+export async function fetchModelsHealth(): Promise<ModelsHealthResponse> {
+  return fetchApi('/api/accounts/models/health');
 }

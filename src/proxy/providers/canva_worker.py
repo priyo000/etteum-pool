@@ -11,6 +11,7 @@ Output (stdout JSON):
 
 Requires: curl_cffi (for TLS fingerprint impersonation)
 """
+
 import json
 import sys
 import time
@@ -22,14 +23,14 @@ IMPERSONATE = "chrome131"
 # Aspect ratio codes for Canva Magic Media (g.A field).
 # Discovered empirically by probing different g.A values.
 ASPECT_RATIOS = {
-    "1:1":   "A",  # 1200x1200 - Square
-    "16:9":  "B",  # 1600x912  - Landscape
-    "5:4":   "C",  # 1344x1088 - Landscape
-    "4:3":   "D",  # 1392x1040 - Landscape
-    "2:1":   "E",  # 1712x864  - Cinematic
-    "9:16":  "F",  # 912x1600  - Portrait
-    "4:5":   "G",  # 1088x1344 - Portrait
-    "3:4":   "H",  # 1040x1392 - Portrait
+    "1:1": "A",  # 1200x1200 - Square
+    "16:9": "B",  # 1600x912  - Landscape
+    "5:4": "C",  # 1344x1088 - Landscape
+    "4:3": "D",  # 1392x1040 - Landscape
+    "2:1": "E",  # 1712x864  - Cinematic
+    "9:16": "F",  # 912x1600  - Portrait
+    "4:5": "G",  # 1088x1344 - Portrait
+    "3:4": "H",  # 1040x1392 - Portrait
 }
 DEFAULT_ASPECT = "1:1"
 
@@ -40,13 +41,37 @@ def build_session(cookies: dict):
 
     session = requests.Session(impersonate=IMPERSONATE)
 
-    # Set cookies from all_cookies if available, otherwise individual fields
-    all_cookies = {}
-    if cookies.get("all_cookies"):
-        try:
-            all_cookies = json.loads(cookies["all_cookies"]) if isinstance(cookies["all_cookies"], str) else cookies["all_cookies"]
-        except (json.JSONDecodeError, TypeError):
-            pass
+    # Set cookies from all_cookies if available, otherwise individual fields.
+    # `all_cookies` arrives as ONE of:
+    #   1. JSON-encoded dict string  →  legacy fetch_tokens format
+    #   2. "name=val; name=val" string  →  modern join/switch format (preferred)
+    #   3. dict already (rare; in-process tests)
+    # All three must produce a flat {name: value} map. Losing cookies here
+    # silently kills cf_clearance and triggers a Cloudflare 403 on every
+    # subsequent request — verified-and-painful 2026-06-16.
+    all_cookies: dict = {}
+    raw_all = cookies.get("all_cookies")
+    if raw_all:
+        if isinstance(raw_all, dict):
+            all_cookies = {str(k): str(v) for k, v in raw_all.items()}
+        elif isinstance(raw_all, str):
+            s = raw_all.strip()
+            if s.startswith("{"):
+                # JSON-dict format
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, dict):
+                        all_cookies = {str(k): str(v) for k, v in parsed.items()}
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            else:
+                # "name=val; name=val" header-style format
+                for pair in s.split(";"):
+                    pair = pair.strip()
+                    if pair and "=" in pair:
+                        k, v = pair.split("=", 1)
+                        if k:
+                            all_cookies[k.strip()] = v.strip()
 
     for name, value in all_cookies.items():
         session.cookies.set(name, str(value), domain=".canva.com")
@@ -79,7 +104,14 @@ def build_headers(cookies: dict) -> dict:
     }
 
 
-def generate_media(cookies: dict, prompt: str, mode: str = "image", timeout: int = 90, count: int = 1, aspect: str = DEFAULT_ASPECT) -> dict:
+def generate_media(
+    cookies: dict,
+    prompt: str,
+    mode: str = "image",
+    timeout: int = 90,
+    count: int = 1,
+    aspect: str = DEFAULT_ASPECT,
+) -> dict:
     """Generate image or video via Canva's ingredientgeneration API."""
     session = build_session(cookies)
     headers = build_headers(cookies)
@@ -114,16 +146,25 @@ def generate_media(cookies: dict, prompt: str, mode: str = "image", timeout: int
         }
 
     try:
-        resp = session.post(f"{CANVA_BASE}/_ajax/ingredientgeneration", headers=headers, json=body)
+        resp = session.post(
+            f"{CANVA_BASE}/_ajax/ingredientgeneration", headers=headers, json=body
+        )
     except Exception as e:
         return {"ok": False, "error": f"request failed: {e}"}
 
     if resp.status_code == 403:
         return {"ok": False, "error": "forbidden - cookies expired or invalid"}
     if resp.status_code == 429:
-        return {"ok": False, "error": "rate limited / quota exhausted", "quota_exhausted": True}
+        return {
+            "ok": False,
+            "error": "rate limited / quota exhausted",
+            "quota_exhausted": True,
+        }
     if resp.status_code != 200:
-        return {"ok": False, "error": f"create job failed: HTTP {resp.status_code} {resp.text[:200]}"}
+        return {
+            "ok": False,
+            "error": f"create job failed: HTTP {resp.status_code} {resp.text[:200]}",
+        }
 
     data = resp.json()
     job_id = data.get("A", "")
@@ -136,7 +177,10 @@ def generate_media(cookies: dict, prompt: str, mode: str = "image", timeout: int
         time.sleep(POLL_INTERVAL)
 
         try:
-            r = session.get(f"{CANVA_BASE}/_ajax/ingredientgeneration?jobId={job_id}", headers=headers)
+            r = session.get(
+                f"{CANVA_BASE}/_ajax/ingredientgeneration?jobId={job_id}",
+                headers=headers,
+            )
         except Exception:
             continue
 
@@ -159,19 +203,26 @@ def generate_media(cookies: dict, prompt: str, mode: str = "image", timeout: int
             normalized = []
             for item in results:
                 if isinstance(item, dict):
-                    normalized.append({
-                        "B": item.get("B", ""),
-                        "G": item.get("G", ""),
-                        "width": item.get("J") or item.get("I"),
-                        "height": item.get("K") or item.get("H"),
-                    })
+                    normalized.append(
+                        {
+                            "B": item.get("B", ""),
+                            "G": item.get("G", ""),
+                            "width": item.get("J") or item.get("I"),
+                            "height": item.get("K") or item.get("H"),
+                        }
+                    )
                 elif isinstance(item, str) and item.startswith("http"):
-                    normalized.append({"B": item, "G": "", "width": None, "height": None})
+                    normalized.append(
+                        {"B": item, "G": "", "width": None, "height": None}
+                    )
                 else:
                     continue
 
             if not normalized:
-                return {"ok": False, "error": "generation completed but no usable results"}
+                return {
+                    "ok": False,
+                    "error": "generation completed but no usable results",
+                }
 
             # Single result
             if len(normalized) == 1:
@@ -189,12 +240,14 @@ def generate_media(cookies: dict, prompt: str, mode: str = "image", timeout: int
             # Multiple results
             images = []
             for item in normalized:
-                images.append({
-                    "url": item["B"],
-                    "thumbnail": item["G"],
-                    "width": item["width"],
-                    "height": item["height"],
-                })
+                images.append(
+                    {
+                        "url": item["B"],
+                        "thumbnail": item["G"],
+                        "width": item["width"],
+                        "height": item["height"],
+                    }
+                )
             return {
                 "ok": True,
                 "images": images,
@@ -237,7 +290,11 @@ def fetch_quota(cookies: dict) -> dict:
     raw_used = q.get("C")
     raw_limit = q.get("D")
 
-    if isinstance(raw_used, (int, float)) and isinstance(raw_limit, (int, float)) and raw_limit > 0:
+    if (
+        isinstance(raw_used, (int, float))
+        and isinstance(raw_limit, (int, float))
+        and raw_limit > 0
+    ):
         return {
             "ok": True,
             "quota_used": int(raw_used),

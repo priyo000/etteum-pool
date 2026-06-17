@@ -22,11 +22,15 @@ export function stopLoginProcess(accountId: number): boolean {
     const pid = proc.pid;
     // Immediately SIGKILL the process and all its children
     if (pid) {
-      // Kill all child processes (browsers, etc) via pkill
-      try { Bun.spawnSync(["pkill", "-9", "-P", String(pid)]); } catch {}
-      // Kill process group
-      try { process.kill(-pid, "SIGKILL"); } catch {}
-      // Kill the process itself
+      if (process.platform === "win32") {
+        // Windows: use taskkill to kill process tree
+        try { Bun.spawnSync(["taskkill", "/F", "/T", "/PID", String(pid)]); } catch {}
+      } else {
+        // Unix: kill all child processes via pkill, then process group
+        try { Bun.spawnSync(["pkill", "-9", "-P", String(pid)]); } catch {}
+        try { process.kill(-pid, "SIGKILL"); } catch {}
+      }
+      // Kill the process itself (works on all platforms)
       try { process.kill(pid, "SIGKILL"); } catch {}
     }
     try { proc.kill("SIGKILL"); } catch {}

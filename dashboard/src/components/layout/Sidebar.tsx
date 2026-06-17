@@ -12,6 +12,7 @@ import {
   Bot,
   CreditCard,
   Globe,
+  Radio,
   Sparkles,
   Filter,
   Plug,
@@ -58,6 +59,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "API Key", path: "/api-key", icon: Key },
       { label: "Proxy Pool", path: "/proxy-pool", icon: Globe },
+      { label: "Relay & Tunnel", path: "/relay", icon: Radio },
       { label: "VCC Pool", path: "/vcc-pool", icon: CreditCard },
       { label: "Filter Rules", path: "/filter-rules", icon: Filter },
       { label: "Proxy Settings", path: "/settings", icon: Sliders },

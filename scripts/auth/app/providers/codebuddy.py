@@ -680,20 +680,30 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
 
     try:
         _codebuddy_auth_debug("navigating to Gmail inbox in same tab")
-        await page.goto("https://mail.google.com/mail/u/0/#inbox", wait_until="domcontentloaded", timeout=45000)
+        await page.goto(
+            "https://mail.google.com/mail/u/0/#inbox",
+            wait_until="domcontentloaded",
+            timeout=45000,
+        )
         await asyncio.sleep(5)
 
         gmail_url = page.url
         _codebuddy_auth_debug(f"Gmail page URL: {gmail_url[:100]}")
 
         if "accounts.google.com" in gmail_url:
-            _codebuddy_auth_debug("Gmail redirected to Google login — session not shared, going back")
-            await page.goto(verify_page_url, wait_until="domcontentloaded", timeout=15000)
+            _codebuddy_auth_debug(
+                "Gmail redirected to Google login — session not shared, going back"
+            )
+            await page.goto(
+                verify_page_url, wait_until="domcontentloaded", timeout=15000
+            )
             return False
 
         email_found = False
         for attempt in range(15):
-            _codebuddy_auth_debug(f"searching for verification email (attempt {attempt+1}/15)")
+            _codebuddy_auth_debug(
+                f"searching for verification email (attempt {attempt + 1}/15)"
+            )
 
             email_selectors = [
                 'tr:has-text("codebuddy")',
@@ -728,11 +738,17 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
             await asyncio.sleep(4)
 
         if not email_found:
-            _codebuddy_auth_debug("verification email not found after 15 attempts, going back")
-            await page.goto(verify_page_url, wait_until="domcontentloaded", timeout=15000)
+            _codebuddy_auth_debug(
+                "verification email not found after 15 attempts, going back"
+            )
+            await page.goto(
+                verify_page_url, wait_until="domcontentloaded", timeout=15000
+            )
             return False
 
-        _codebuddy_auth_debug("email thread opened, expanding latest message and extracting link")
+        _codebuddy_auth_debug(
+            "email thread opened, expanding latest message and extracting link"
+        )
         await asyncio.sleep(2)
 
         try:
@@ -742,10 +758,12 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
             pass
 
         try:
-            collapsed = page.locator('div.kv, [data-message-id], div.gs')
+            collapsed = page.locator("div.kv, [data-message-id], div.gs")
             count = await collapsed.count()
             if count > 1:
-                _codebuddy_auth_debug(f"thread has {count} messages, clicking last one to expand")
+                _codebuddy_auth_debug(
+                    f"thread has {count} messages, clicking last one to expand"
+                )
                 await collapsed.nth(count - 1).click()
                 await asyncio.sleep(2)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -757,6 +775,7 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
 
         try:
             import re
+
             body_html = await page.content()
             patterns = [
                 r'href="(https?://[^"]*callback\.cloudses\.com/api/webhook\?upn=[^"]*)"',
@@ -775,7 +794,9 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
 
             if all_links:
                 verify_link = all_links[-1]
-                _codebuddy_auth_debug(f"found {len(all_links)} verification links, using latest")
+                _codebuddy_auth_debug(
+                    f"found {len(all_links)} verification links, using latest"
+                )
         except Exception as e:
             _codebuddy_auth_debug(f"regex search failed: {e}")
 
@@ -793,16 +814,24 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
                     count = await links.count()
                     if count > 0:
                         href = await links.nth(count - 1).get_attribute("href")
-                        if href and ("login-actions" in href or "session_code" in href or "webhook" in href):
+                        if href and (
+                            "login-actions" in href
+                            or "session_code" in href
+                            or "webhook" in href
+                        ):
                             verify_link = href.replace("&amp;", "&")
-                            _codebuddy_auth_debug(f"found link via selector (last of {count}): {sel}")
+                            _codebuddy_auth_debug(
+                                f"found link via selector (last of {count}): {sel}"
+                            )
                             break
                 except Exception:
                     continue
 
         if not verify_link:
             _codebuddy_auth_debug("could not find verification link, going back")
-            await page.goto(verify_page_url, wait_until="domcontentloaded", timeout=15000)
+            await page.goto(
+                verify_page_url, wait_until="domcontentloaded", timeout=15000
+            )
             return False
 
         _codebuddy_auth_debug(f"navigating to verification link: {verify_link[:80]}...")
@@ -819,7 +848,9 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
                 page_text = ""
 
             if page_text and "click here to proceed" in page_text.lower():
-                _codebuddy_auth_debug("found 'Click here to proceed' confirmation page, clicking")
+                _codebuddy_auth_debug(
+                    "found 'Click here to proceed' confirmation page, clicking"
+                )
                 proceed_selectors = [
                     'a:has-text("Click here to proceed")',
                     'a:has-text("click here")',
@@ -845,7 +876,9 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
                             link_text = await all_links.nth(i).text_content()
                             if link_text and "proceed" in link_text.lower():
                                 await all_links.nth(i).click()
-                                _codebuddy_auth_debug("clicked proceed link by text scan")
+                                _codebuddy_auth_debug(
+                                    "clicked proceed link by text scan"
+                                )
                                 clicked = True
                                 await asyncio.sleep(3)
                                 break
@@ -863,7 +896,9 @@ async def _handle_codebuddy_email_verification(page: Any) -> bool:
     except Exception as e:
         _codebuddy_auth_debug(f"email verification failed: {e}")
         try:
-            await page.goto(verify_page_url, wait_until="domcontentloaded", timeout=15000)
+            await page.goto(
+                verify_page_url, wait_until="domcontentloaded", timeout=15000
+            )
         except Exception:
             pass
         return False
@@ -1396,9 +1431,7 @@ async def _create_api_key_via_page(
 
         if status != 200 or not isinstance(payload, dict):
             if status and body_text:
-                _codebuddy_auth_debug(
-                    f"create api key via page body={body_text[:200]}"
-                )
+                _codebuddy_auth_debug(f"create api key via page body={body_text[:200]}")
             if attempt < retries:
                 continue
             return None
@@ -1661,12 +1694,20 @@ async def _submit_region_via_page(page: Any) -> bool:
 
     if user_id:
         register_url = f"{CODEBUDDY_BASE_URL}/auth/realms/copilot/overseas/user/register?userId={user_id}"
-        reg_status, reg_payload, _ = await _codebuddy_request_via_page(page, "GET", register_url)
-        _codebuddy_auth_debug(f"register user status={reg_status} payload={reg_payload}")
+        reg_status, reg_payload, _ = await _codebuddy_request_via_page(
+            page, "GET", register_url
+        )
+        _codebuddy_auth_debug(
+            f"register user status={reg_status} payload={reg_payload}"
+        )
 
     trial_url = f"{CODEBUDDY_BASE_URL}/billing/ide/trial"
-    trial_status, trial_payload, _ = await _codebuddy_request_via_page(page, "POST", trial_url)
-    _codebuddy_auth_debug(f"activate trial status={trial_status} payload={trial_payload}")
+    trial_status, trial_payload, _ = await _codebuddy_request_via_page(
+        page, "POST", trial_url
+    )
+    _codebuddy_auth_debug(
+        f"activate trial status={trial_status} payload={trial_payload}"
+    )
 
     return True
 
@@ -1873,7 +1914,9 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
             page.set_default_timeout(30000)
             await page.goto(auth_url, wait_until="domcontentloaded", timeout=45000)
             session["page"] = page
-            _codebuddy_auth_debug("browser page restarted successfully (new page from existing browser)")
+            _codebuddy_auth_debug(
+                "browser page restarted successfully (new page from existing browser)"
+            )
             return page
         except Exception:
             pass
@@ -1946,7 +1989,10 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                 return await self._authenticate_inner(account, session, page, state)
             except Exception as exc:
                 is_connection_closed = is_browser_crash(exc)
-                if is_connection_closed and _browser_crash_retries < _max_browser_crash_retries:
+                if (
+                    is_connection_closed
+                    and _browser_crash_retries < _max_browser_crash_retries
+                ):
                     _browser_crash_retries += 1
                     _codebuddy_auth_debug(
                         f"browser crash detected ({_browser_crash_retries}/{_max_browser_crash_retries}): {str(exc)[:100]}"
@@ -2007,7 +2053,9 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
         _consent_was_clicked = False
 
         _consecutive_page_errors = 0
-        for _ in range(600):  # High iteration cap — inactivity timeout is the real guard
+        for _ in range(
+            600
+        ):  # High iteration cap — inactivity timeout is the real guard
             _now_mono = time.monotonic()
             if _now_mono - _last_progress_at > _INACTIVITY_TIMEOUT:
                 raise RetryableBatcherError(
@@ -2082,7 +2130,9 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                         q.get("platform", [""])[0].upper() == CODEBUDDY_PLATFORM
                         and q.get("state", [""])[0] == state
                     ):
-                        _emit_oauth_progress("OAuth complete — redirect callback received")
+                        _emit_oauth_progress(
+                            "OAuth complete — redirect callback received"
+                        )
                         return {"authenticated": True, "state": state}
 
                 if current_url.startswith(CODEBUDDY_REDIRECT_SCHEME):
@@ -2113,27 +2163,45 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
 
             is_verify_email_page = False
             if on_keycloak_auth:
-                if "VERIFY_EMAIL" in current_url or "verify-email" in current_url.lower() or ("required-action" in current_path and "execution=VERIFY_EMAIL" in current_url):
+                if (
+                    "VERIFY_EMAIL" in current_url
+                    or "verify-email" in current_url.lower()
+                    or (
+                        "required-action" in current_path
+                        and "execution=VERIFY_EMAIL" in current_url
+                    )
+                ):
                     is_verify_email_page = True
                 if not is_verify_email_page:
                     try:
                         page_text = await page.text_content("body")
-                        if page_text and ("verify your email" in page_text.lower() or "email verification" in page_text.lower()):
+                        if page_text and (
+                            "verify your email" in page_text.lower()
+                            or "email verification" in page_text.lower()
+                        ):
                             is_verify_email_page = True
                     except Exception:
                         pass
 
             if is_verify_email_page:
-                _last_progress_at = time.monotonic()  # progress: email verification page
-                _codebuddy_auth_debug(f"email verification page detected at {current_url[:100]}")
+                _last_progress_at = (
+                    time.monotonic()
+                )  # progress: email verification page
+                _codebuddy_auth_debug(
+                    f"email verification page detected at {current_url[:100]}"
+                )
                 verified = await _handle_codebuddy_email_verification(page)
                 if verified:
-                    _codebuddy_auth_debug("email verification completed, continuing auth flow")
+                    _codebuddy_auth_debug(
+                        "email verification completed, continuing auth flow"
+                    )
                     landing_transition_deadline = time.monotonic() + 10.0
                     await asyncio.sleep(2.0)
                     continue
                 else:
-                    _codebuddy_auth_debug("email verification handler returned False, will retry next loop")
+                    _codebuddy_auth_debug(
+                        "email verification handler returned False, will retry next loop"
+                    )
                     await asyncio.sleep(3.0)
                     continue
 
@@ -2142,12 +2210,18 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                     error_el = await page.query_selector("#kc-error-message")
                     if error_el:
                         error_text = await error_el.text_content()
-                        _codebuddy_auth_debug(f"keycloak error page detected: {(error_text or '').strip()[:100]}")
+                        _codebuddy_auth_debug(
+                            f"keycloak error page detected: {(error_text or '').strip()[:100]}"
+                        )
                         auth_url = session.get("auth_url", "")
                         if auth_url:
-                            _codebuddy_auth_debug(f"retrying auth from scratch: {auth_url[:80]}")
+                            _codebuddy_auth_debug(
+                                f"retrying auth from scratch: {auth_url[:80]}"
+                            )
                             await asyncio.sleep(2.0)
-                            await page.goto(auth_url, wait_until="domcontentloaded", timeout=45000)
+                            await page.goto(
+                                auth_url, wait_until="domcontentloaded", timeout=45000
+                            )
                             landing_transition_deadline = time.monotonic() + 10.0
                             await asyncio.sleep(1.0)
                             continue
@@ -2159,7 +2233,9 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                     raise
                 except Exception as exc:
                     # Page is likely broken/crashed — log and break early
-                    _codebuddy_auth_debug(f"keycloak error check failed (page broken?): {exc}")
+                    _codebuddy_auth_debug(
+                        f"keycloak error check failed (page broken?): {exc}"
+                    )
                     await asyncio.sleep(1.0)
                     continue
 
@@ -2275,7 +2351,11 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                 await asyncio.sleep(0.5)
                 continue
 
-            if on_keycloak_auth and not is_verify_email_page and now >= landing_transition_deadline:
+            if (
+                on_keycloak_auth
+                and not is_verify_email_page
+                and now >= landing_transition_deadline
+            ):
                 _codebuddy_auth_debug(
                     f"keycloak auth page detected (path={current_path!r}), clicking Google login"
                 )
@@ -2288,7 +2368,11 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                 await asyncio.sleep(1.0)
                 continue
 
-            if on_keycloak_auth and not is_verify_email_page and now < landing_transition_deadline:
+            if (
+                on_keycloak_auth
+                and not is_verify_email_page
+                and now < landing_transition_deadline
+            ):
                 await asyncio.sleep(0.5)
                 continue
 
@@ -2427,16 +2511,18 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                 is_connection_closed = is_browser_crash(exc)
                 if is_connection_closed and _token_attempt < 2:
                     _codebuddy_auth_debug(
-                        f"browser crash in fetch_tokens (attempt {_token_attempt+1}/3): {str(exc)[:100]}"
+                        f"browser crash in fetch_tokens (attempt {_token_attempt + 1}/3): {str(exc)[:100]}"
                     )
                     _emit_oauth_progress(
-                        f"Browser crashed during token fetch — restarting ({_token_attempt+1}/2)"
+                        f"Browser crashed during token fetch — restarting ({_token_attempt + 1}/2)"
                     )
                     await asyncio.sleep(2.0)
                     try:
                         page = await self._restart_browser_page(session)
                     except Exception as restart_exc:
-                        _codebuddy_auth_debug(f"browser restart failed in fetch_tokens: {restart_exc}")
+                        _codebuddy_auth_debug(
+                            f"browser restart failed in fetch_tokens: {restart_exc}"
+                        )
                         raise RetryableBatcherError(
                             ErrorCode.browser_unexpected_state,
                             f"codebuddy browser crash in fetch_tokens + restart failed: {exc}",
@@ -2472,22 +2558,51 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
             # and establishes session cookies on the CodeBuddy domain.
             _state_url = f"{CODEBUDDY_BASE_URL}/started?platform={CODEBUDDY_PLATFORM}&state={state}"
             try:
-                await page.goto(_state_url, wait_until="domcontentloaded", timeout=30000)
+                await page.goto(
+                    _state_url, wait_until="domcontentloaded", timeout=30000
+                )
             except Exception as nav_exc:
-                _codebuddy_auth_debug(f"navigation to CodeBuddy failed: {nav_exc}, trying base URL")
+                _codebuddy_auth_debug(
+                    f"navigation to CodeBuddy failed: {nav_exc}, trying base URL"
+                )
                 try:
-                    await page.goto(CODEBUDDY_BASE_URL, wait_until="domcontentloaded", timeout=30000)
+                    await page.goto(
+                        CODEBUDDY_BASE_URL, wait_until="domcontentloaded", timeout=30000
+                    )
                 except Exception:
                     pass
             await asyncio.sleep(1.0)
 
-        # ─── ENSURE REGION + TRIAL ACTIVATION ────────────────────────────
+        # ─── CHECK FOR ACCOUNT BAN / RESTRICTION ─────────────────────────
+        # Banned accounts land on /no-permission?errCode=12154 after OAuth.
+        # This is a permanent restriction — no point retrying.
+        try:
+            current_url_after = page.url or ""
+        except Exception:
+            current_url_after = ""
+        if "/no-permission" in current_url_after:
+            from urllib.parse import parse_qs, urlparse as _urlparse
+
+            err_code = parse_qs(_urlparse(current_url_after).query).get(
+                "errCode", ["unknown"]
+            )[0]
+            raise NonRetryableBatcherError(
+                ErrorCode.auth_account_suspended,
+                f"codebuddy account is restricted/banned (errCode={err_code}) — account cannot be used",
+            )
+
         # Region setup and trial activation are required to provision credits.
         # Without this, accounts get "Restricted" status with 0 credits.
-        _codebuddy_auth_debug("ensuring region + trial activation before API key creation")
+        _codebuddy_auth_debug(
+            "ensuring region + trial activation before API key creation"
+        )
         await self._ensure_region_and_trial(page)
 
         # ─── DIRECT API KEY CREATION ─────────────────────────────────────
+        # Save cookies first so retry can reuse session without re-doing OAuth
+        await _save_cookies_to_file(page, account.identifier)
+        _codebuddy_auth_debug("cookies saved before API key creation")
+
         # Directly create API key via page.evaluate() → fetch().
         # Works even on restricted/error pages — session cookies are enough.
         _codebuddy_auth_debug("creating API key directly")
@@ -2499,8 +2614,7 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                 "codebuddy failed to create API key",
             )
 
-        await _save_cookies_to_file(page, account.identifier)
-        _codebuddy_auth_debug("done — cookies saved, browser can be closed")
+        _codebuddy_auth_debug("done — api key created, browser can be closed")
 
         return {"api_key": api_key, "state": state}
 
@@ -2552,14 +2666,18 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                 f"payload={reg_payload}"
             )
         else:
-            _codebuddy_auth_debug("region+trial: no uid found, skipping overseas register")
+            _codebuddy_auth_debug(
+                "region+trial: no uid found, skipping overseas register"
+            )
 
         # Step 3: Activate trial
         trial_url = f"{CODEBUDDY_BASE_URL}/billing/ide/trial"
         trial_status, trial_payload, _ = await _codebuddy_request_via_page(
             page, "POST", trial_url
         )
-        trial_code = trial_payload.get("code") if isinstance(trial_payload, dict) else None
+        trial_code = (
+            trial_payload.get("code") if isinstance(trial_payload, dict) else None
+        )
         _codebuddy_auth_debug(
             f"region+trial: trial activation status={trial_status} code={trial_code}"
         )
@@ -2587,7 +2705,7 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
             except Exception as exc:
                 if is_browser_crash(exc) and _quota_attempt < 2:
                     _codebuddy_auth_debug(
-                        f"browser crash in fetch_quota (attempt {_quota_attempt+1}/3): {str(exc)[:100]}"
+                        f"browser crash in fetch_quota (attempt {_quota_attempt + 1}/3): {str(exc)[:100]}"
                     )
                     await asyncio.sleep(1.5)
                     try:
@@ -2624,7 +2742,7 @@ class CodeBuddyProviderAdapter(ProviderAdapter):
                 # If remain is 0 but we just activated trial, wait and retry
                 if remain <= 0 and attempt < 3:
                     _codebuddy_auth_debug(
-                        f"credit remain=0 on attempt {attempt+1}, retrying..."
+                        f"credit remain=0 on attempt {attempt + 1}, retrying..."
                     )
                     continue
                 if gift_claimed:

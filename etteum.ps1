@@ -48,8 +48,10 @@ function Test-PortInUse([int]$port) {
 }
 
 function Invoke-Start {
-  $apiPort = [int](Get-EnvValue "PORT" "1630")
-  $dashPort = [int](Get-EnvValue "DASHBOARD_PORT" "1631")
+  param([bool]$Watch = $false)
+
+  $apiPort = [int](Get-EnvValue "PORT" "1930")
+  $dashPort = [int](Get-EnvValue "DASHBOARD_PORT" "1931")
 
   if (Test-PortInUse $apiPort) {
     Write-Host "Port $apiPort already in use. Run: .\etteum.ps1 stop" -ForegroundColor Red
@@ -60,22 +62,44 @@ function Invoke-Start {
     return
   }
 
-  Write-Host "Starting Etteum..."
-  $proc = Start-Process -FilePath "bun" -ArgumentList "scripts/production.ts","--skip-build" `
-    -WorkingDirectory $ProjectDir -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile `
-    -WindowStyle Hidden -PassThru
+  if ($Watch) {
+    Write-Host "Starting Etteum in DEV MODE (hot-reload)..." -ForegroundColor Yellow
+  } else {
+    Write-Host "Starting Etteum..."
+  }
+  $BunExe = (Get-Command bun -ErrorAction SilentlyContinue).Source
+  if (-not $BunExe) { $BunExe = "$env:USERPROFILE\.bun\bin\bun.exe" }
+  # Start bun directly - NO -RedirectStandardOutput (it breaks Bun.spawn on Windows)
+  $startArgs = @("scripts/production.ts", "--skip-build")
+  if ($Watch) { $startArgs += "--watch" }
+  $proc = Start-Process -FilePath $BunExe -ArgumentList $startArgs `
+    -WorkingDirectory $ProjectDir -PassThru
   $proc.Id | Out-File -FilePath $PidFile -Encoding ascii
-  Start-Sleep -Seconds 1
 
-  if (-not $proc.HasExited) {
-    Write-Host "Etteum started (PID $($proc.Id))" -ForegroundColor Green
+  # Wait for server to be ready (retry up to 15 seconds; dev mode is slower)
+  $maxWait = if ($Watch) { 30 } else { 15 }
+  $started = $false
+  for ($i = 0; $i -lt $maxWait; $i++) {
+    Start-Sleep -Seconds 1
+    try {
+      $listener = Get-NetTCPConnection -LocalPort $apiPort -State Listen -ErrorAction Stop
+      $started = $true
+      break
+    } catch { continue }
+  }
+
+  if ($started) {
+    if ($Watch) {
+      Write-Host "Etteum started in DEV MODE (PID $($proc.Id))" -ForegroundColor Green
+    } else {
+      Write-Host "Etteum started (PID $($proc.Id))" -ForegroundColor Green
+    }
     Write-Host "  Backend:   http://localhost:$apiPort"
     Write-Host "  Dashboard: http://localhost:$dashPort"
     Write-Host "  Logs:      .\etteum.ps1 logs"
   } else {
     Remove-Item $PidFile -ErrorAction SilentlyContinue
-    Write-Host "Failed to start. Check logs at $LogFile" -ForegroundColor Red
-    Get-Content $LogFile -Tail 5 -ErrorAction SilentlyContinue
+    Write-Host "Failed to start. Try: bun scripts/production.ts --skip-build" -ForegroundColor Red
   }
 }
 
@@ -158,9 +182,17 @@ function Invoke-Port([string]$apiPort, [string]$dashPort) {
 }
 
 switch ($Command.ToLower()) {
-  "start"   { Invoke-Start }
+  "start"   {
+    # Detect --watch / --dev / -w in either positional slot.
+    $watch = ($Arg1 -in "--watch","--dev","-w") -or ($Arg2 -in "--watch","--dev","-w")
+    Invoke-Start -Watch:$watch
+  }
   "stop"    { Invoke-Stop }
-  "restart" { Invoke-Stop; Start-Sleep -Seconds 1; Invoke-Start }
+  "restart" {
+    $watch = ($Arg1 -in "--watch","--dev","-w") -or ($Arg2 -in "--watch","--dev","-w")
+    Invoke-Stop; Start-Sleep -Seconds 1; Invoke-Start -Watch:$watch
+  }
+  "dev"     { Invoke-Start -Watch:$true }
   "status"  { Invoke-Status }
   "logs"    { Invoke-Logs $Arg1 }
   "update"  { Invoke-Update }
@@ -168,15 +200,16 @@ switch ($Command.ToLower()) {
   "port"    { Invoke-Port $Arg1 $Arg2 }
   default {
     Write-Host "etteum - Etteum Management CLI (Windows)`n"
-    Write-Host "Usage: .\etteum.ps1 <command>`n"
+    Write-Host "Usage: .\etteum.ps1 <command> [flags]`n"
     Write-Host "Commands:"
-    Write-Host "  start       Start the server"
-    Write-Host "  stop        Stop the server"
-    Write-Host "  restart     Restart the server"
-    Write-Host "  status      Show server status"
-    Write-Host "  logs        Follow server logs (.\etteum.ps1 logs -f)"
-    Write-Host "  update      Pull git, install deps, build, restart"
-    Write-Host "  build       Rebuild dashboard and restart"
-    Write-Host "  port        Show/change ports (.\etteum.ps1 port 1630 1631)"
+    Write-Host "  start [--watch]   Start the server (--watch enables hot-reload)"
+    Write-Host "  stop              Stop the server"
+    Write-Host "  restart [--watch] Restart the server"
+    Write-Host "  dev               Alias for: start --watch"
+    Write-Host "  status            Show server status"
+    Write-Host "  logs              Follow server logs (.\etteum.ps1 logs -f)"
+    Write-Host "  update            Pull git, install deps, build, restart"
+    Write-Host "  build             Rebuild dashboard and restart"
+    Write-Host "  port              Show/change ports (.\etteum.ps1 port 1930 1931)"
   }
 }

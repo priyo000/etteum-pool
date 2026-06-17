@@ -11,7 +11,7 @@
  */
 
 const port = Number(process.env.DASHBOARD_PORT) || 1931;
-const distDir = new URL("../dashboard/dist", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1");
+const distDir = decodeURIComponent(new URL("../dashboard/dist", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1"));
 const indexFile = `${distDir}/index.html`;
 
 // Check if dashboard is built

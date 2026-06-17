@@ -58,7 +58,8 @@ class CanvaProviderAdapter(ProviderAdapter):
             from camoufox.async_api import AsyncCamoufox
 
             camoufox_kwargs: dict[str, Any] = {
-                "headless": os.getenv("BATCHER_CAMOUFOX_HEADLESS", "true").lower() == "true",
+                "headless": os.getenv("BATCHER_CAMOUFOX_HEADLESS", "true").lower()
+                == "true",
                 "os": "windows",
                 "block_webrtc": True,
                 "humanize": False,
@@ -67,8 +68,11 @@ class CanvaProviderAdapter(ProviderAdapter):
             proxy_url = os.getenv("BATCHER_PROXY_URL", "")
             if proxy_url:
                 from urllib.parse import urlparse
+
                 parsed = urlparse(proxy_url)
-                proxy_cfg: dict[str, Any] = {"server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"}
+                proxy_cfg: dict[str, Any] = {
+                    "server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+                }
                 if parsed.username:
                     proxy_cfg["username"] = parsed.username
                 if parsed.password:
@@ -81,7 +85,9 @@ class CanvaProviderAdapter(ProviderAdapter):
             page = await browser.new_page()
             page.set_default_timeout(15000)
 
-            await page.goto(CANVA_LOGIN_URL, wait_until="domcontentloaded", timeout=20000)
+            await page.goto(
+                CANVA_LOGIN_URL, wait_until="domcontentloaded", timeout=20000
+            )
             await asyncio.sleep(3)
 
             return {
@@ -97,7 +103,9 @@ class CanvaProviderAdapter(ProviderAdapter):
                 str(exc) or "canva camoufox bootstrap failed",
             ) from exc
 
-    async def authenticate(self, account: NormalizedAccount, session: Any) -> dict[str, Any]:
+    async def authenticate(
+        self, account: NormalizedAccount, session: Any
+    ) -> dict[str, Any]:
         if session is None or session.get("stub"):
             return {"authenticated": True}
 
@@ -220,7 +228,9 @@ class CanvaProviderAdapter(ProviderAdapter):
         session["cookies"] = canva_cookies
         return {"authenticated": True, "cookies": canva_cookies}
 
-    async def fetch_tokens(self, account: NormalizedAccount, auth_state: dict[str, Any], session: Any) -> dict[str, str]:
+    async def fetch_tokens(
+        self, account: NormalizedAccount, auth_state: dict[str, Any], session: Any
+    ) -> dict[str, str]:
         cookies = auth_state.get("cookies") or (session or {}).get("cookies") or {}
         if not cookies.get("CAZ"):
             raise NonRetryableBatcherError(
@@ -251,25 +261,65 @@ class CanvaProviderAdapter(ProviderAdapter):
             "all_cookies": json.dumps(cookies),
         }
 
-    async def fetch_quota(self, account: NormalizedAccount, tokens: dict[str, str], session: Any) -> dict[str, Any] | None:
-        import aiohttp
-        import ssl
-
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
+    async def fetch_quota(
+        self, account: NormalizedAccount, tokens: dict[str, str], session: Any
+    ) -> dict[str, Any] | None:
+        # IMPORTANT: must use curl_cffi (Chrome TLS impersonation), NOT aiohttp.
+        # Canva is fronted by Cloudflare which 403s any TLS handshake that
+        # doesn't match a real browser. aiohttp uses vanilla Python TLS →
+        # always 403. Verified by direct repro 2026-06-16: curl_cffi 200, aiohttp 403.
+        from curl_cffi import requests as cf_requests
 
         caz = tokens.get("caz", "")
         cb = tokens.get("cb", "")
         cau = tokens.get("cau", "")
         user_id = tokens.get("user_id", "")
 
-        cookie_str = f"CAZ={caz}; CB={cb}; CAU={cau}"
+        # Prefer the full cookie jar (has cf_clearance) if stored; fall back to
+        # the minimal CAZ/CB/CAU triple for legacy rows that pre-date that field.
+        all_cookies = tokens.get("all_cookies", "") or ""
+        cookie_map: dict[str, str] = {}
+        if all_cookies:
+            try:
+                if all_cookies.startswith("{"):
+                    import json as _json
+
+                    parsed = _json.loads(all_cookies)
+                    if isinstance(parsed, dict):
+                        cookie_map = {str(k): str(v) for k, v in parsed.items()}
+                else:
+                    for pair in all_cookies.split(";"):
+                        pair = pair.strip()
+                        if pair and "=" in pair:
+                            k, v = pair.split("=", 1)
+                            cookie_map[k.strip()] = v.strip()
+            except Exception:
+                cookie_map = {}
+        # Ensure canonical cookies are present even if all_cookies was empty/stale.
+        if caz:
+            cookie_map["CAZ"] = caz
+        if cb:
+            cookie_map["CB"] = cb
+        if cau:
+            cookie_map["CAU"] = cau
+
+        sess = cf_requests.Session(impersonate="chrome124")
+        # Optional outbound proxy (same env var the other Canva scripts honor)
+        import os as _os
+
+        proxy_url = _os.environ.get("BATCHER_PROXY_URL", "").strip()
+        if proxy_url:
+            sess.proxies = {"http": proxy_url, "https": proxy_url}
+        for name, value in cookie_map.items():
+            try:
+                sess.cookies.set(name, str(value), domain=".canva.com", path="/")
+            except Exception:
+                pass
+
         headers = {
             "Content-Type": "application/json;charset=UTF-8",
             "Origin": "https://www.canva.com",
             "Referer": "https://www.canva.com/ai",
-            "Cookie": cookie_str,
             "x-canva-authz": caz,
             "x-canva-brand": cb,
             "x-canva-user": user_id,
@@ -280,28 +330,33 @@ class CanvaProviderAdapter(ProviderAdapter):
         }
 
         try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with aiohttp.ClientSession(timeout=timeout) as client:
-                async with client.post(
-                    CANVA_QUOTA_URL,
-                    json={"A": "C", "B": cb, "C": user_id},
-                    headers=headers,
-                    ssl=ssl_ctx,
-                ) as resp:
-                    if resp.status != 200:
-                        return {"limit": 100, "remaining": 100}
-                    data = await resp.json()
-                    q = data.get("A", {})
-                    used = q.get("C", 0)
-                    limit = q.get("D", 100)
-                    return {
-                        "limit": float(limit),
-                        "remaining": float(limit - used),
-                        "remaining_credits": float(limit - used),
-                        "total_credits": float(limit),
-                        "current_usage": float(used),
-                    }
+            resp = sess.post(
+                CANVA_QUOTA_URL,
+                json={"A": "C", "B": cb, "C": user_id},
+                headers=headers,
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                # Surface real status in the error message so the dashboard
+                # can show *why* the quota fetch failed (auth vs CF block).
+                raise RuntimeError(f"quota HTTP {resp.status_code}")
+            data = resp.json()
+            q = data.get("A", {})
+            used = q.get("C", 0)
+            limit = q.get("D", 100)
+            return {
+                "limit": float(limit),
+                "remaining": float(limit - used),
+                "remaining_credits": float(limit - used),
+                "total_credits": float(limit),
+                "current_usage": float(used),
+            }
+        except RuntimeError:
+            # Re-raise so the caller surfaces the real error message.
+            raise
         except Exception:
+            # Network / parse fallback — pretend full quota so the account
+            # doesn't get falsely marked exhausted on transient errors.
             return {"limit": 100, "remaining": 100}
 
     async def cleanup_session(self, session: Any) -> None:
