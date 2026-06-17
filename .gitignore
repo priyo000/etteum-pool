@@ -74,6 +74,9 @@ drizzle/
 # Debug artifacts
 *.png
 
+# HAR network captures (may contain secrets)
+*.har
+
 # Claude plans (local only)
 .claude/plans/
 

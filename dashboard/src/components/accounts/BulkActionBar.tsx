@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Trash2,
@@ -55,6 +55,13 @@ export function BulkActionBar({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // Small delay so the transition is visible
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   if (count === 0) return null;
 
@@ -66,26 +73,30 @@ export function BulkActionBar({
 
   return (
     <div
-      className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 max-w-[95vw]"
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[95vw] transition-all duration-200 ${
+        mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+      }`}
       role="region"
       aria-label="Bulk actions"
     >
-      <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 shadow-lg">
+      <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] backdrop-blur-sm px-3 py-2 shadow-lg shadow-black/40">
         {/* Counter + clear */}
-        <div className="flex items-center gap-2 border-r border-[var(--border)] pr-2">
-          <span className="text-xs font-medium text-[var(--foreground)]">
-            {count}
+        <div className="flex items-center gap-2 pr-2">
+          <span className="text-sm font-semibold text-[var(--foreground)]">{count}</span>
+          <span className="text-xs text-[var(--muted-foreground)]">
             {totalCount !== undefined && totalCount !== count && (
-              <span className="text-[var(--muted-foreground)]"> / {totalCount}</span>
-            )}{" "}
+              <span>/ {totalCount} </span>
+            )}
             selected
           </span>
+          <div className="w-px h-5 bg-[var(--border)] mx-1" />
           <Button
             variant="ghost"
             size="sm"
             onClick={onClear}
             className="h-6 w-6 p-0"
             title="Clear selection"
+            aria-label="Clear selection"
           >
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -97,6 +108,7 @@ export function BulkActionBar({
           size="sm"
           onClick={() => setCollapsed((v) => !v)}
           className="h-7 w-7 p-0 sm:hidden"
+          aria-label={collapsed ? "Expand actions" : "Collapse actions"}
         >
           {collapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </Button>
@@ -125,31 +137,31 @@ export function BulkActionBar({
           )}
           {onDisable && (
             <Button variant="outline" size="sm" onClick={() => onDisable()} disabled={busy} className="h-8">
-              <XCircle className="mr-1 h-3.5 w-3.5 text-[var(--muted-foreground)]" /> Disable
+              <XCircle className="mr-1 h-3.5 w-3.5 text-[var(--error)]" /> Disable
             </Button>
           )}
 
+          {/* Export dropdown */}
           {(onExportCSV || onExportJSON) && (
             <div className="relative">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setExportOpen((v) => !v)}
-                disabled={busy}
                 className="h-8"
+                aria-label="Export options"
               >
-                <Download className="mr-1 h-3.5 w-3.5" /> Export
+                <Download className="mr-1 h-3.5 w-3.5" />
+                Export
+                {exportOpen ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />}
               </Button>
               {exportOpen && (
-                <div
-                  className="absolute bottom-full right-0 z-50 mb-1 min-w-[120px] rounded-md border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg"
-                  onMouseLeave={() => setExportOpen(false)}
-                >
+                <div className="absolute bottom-full mb-1 right-0 z-10 min-w-[120px] rounded-md border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg">
                   {onExportCSV && (
                     <button
                       type="button"
                       onClick={() => { onExportCSV(); setExportOpen(false); }}
-                      className="block w-full px-3 py-1.5 text-left text-xs hover:bg-[var(--muted)]"
+                      className="w-full px-3 py-1.5 text-left text-xs text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
                     >
                       CSV
                     </button>
@@ -158,7 +170,7 @@ export function BulkActionBar({
                     <button
                       type="button"
                       onClick={() => { onExportJSON(); setExportOpen(false); }}
-                      className="block w-full px-3 py-1.5 text-left text-xs hover:bg-[var(--muted)]"
+                      className="w-full px-3 py-1.5 text-left text-xs text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
                     >
                       JSON
                     </button>
@@ -168,21 +180,23 @@ export function BulkActionBar({
             </div>
           )}
 
+          {/* Delete with 2-step confirm */}
           {onDelete && (
-            <div className="ml-1 border-l border-[var(--border)] pl-2">
+            <div className="flex items-center gap-1">
               {!confirmingDelete ? (
                 <Button
-                  variant="outline"
+                  variant="destructive"
                   size="sm"
                   onClick={() => setConfirmingDelete(true)}
                   disabled={busy}
-                  className="h-8 text-[var(--error)] hover:bg-[var(--error)]/10"
+                  className="h-8"
+                  aria-label={`Delete ${count} selected accounts`}
                 >
                   <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
                 </Button>
               ) : (
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-[var(--muted-foreground)]">
+                <div className="flex items-center gap-1 rounded-md border border-[var(--error)]/30 bg-[var(--error)]/5 px-2 py-1">
+                  <span className="text-xs font-medium text-[var(--muted-foreground)]">
                     Delete {count}?
                   </span>
                   <Button
@@ -191,6 +205,7 @@ export function BulkActionBar({
                     onClick={handleConfirmDelete}
                     disabled={busy}
                     className="h-7 px-2 text-xs text-[var(--error)] hover:bg-[var(--error)]/10"
+                    aria-label="Confirm delete"
                   >
                     {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes"}
                   </Button>
@@ -200,6 +215,7 @@ export function BulkActionBar({
                     onClick={() => setConfirmingDelete(false)}
                     disabled={busy}
                     className="h-7 px-2 text-xs"
+                    aria-label="Cancel delete"
                   >
                     No
                   </Button>

@@ -462,7 +462,24 @@ export class CodeBuddyProvider extends BaseProvider {
       };
     }
 
-    // Fallback: validate via chat completions endpoint
+    // Fallback 1: try cookie-based billing endpoint (different endpoint, may work when /v2/ is down)
+    const cookieQuota = await this.fetchQuotaViaCookie(tokens);
+    if (cookieQuota) {
+      return {
+        kind: cookieQuota.remaining <= 0 ? "exhausted" : "healthy",
+        success: true,
+        quota: { ...cookieQuota, source: "codebuddy.cookie-billing" },
+        metadata: {
+          credit_total_dosage: cookieQuota.limit,
+          credit_capacity_remain: cookieQuota.remaining,
+          credit_capacity_used: cookieQuota.used,
+          credit_capacity_size: cookieQuota.limit,
+          lastRealBillingSync: new Date().toISOString(),
+        },
+      };
+    }
+
+    // Fallback 2: validate via chat completions endpoint
     const apiStatus = await this.validateApiKey(tokens);
 
     if (apiStatus === "ok") {
@@ -599,6 +616,49 @@ export class CodeBuddyProvider extends BaseProvider {
       headers,
       body: JSON.stringify(payload),
     }, config.providerQuotaTimeoutMs);
+  }
+
+  /**
+   * Fetch quota using web session cookies via the old /billing/meter/get-user-resource endpoint.
+   * This is a fallback when the /v2/ Bearer-token endpoint fails (e.g. HTTP 500).
+   */
+  private async fetchQuotaViaCookie(tokens: CodeBuddyTokens): Promise<{ limit: number; remaining: number; used: number } | null> {
+    const cookieHeader = tokens.web_cookie;
+    if (!cookieHeader) return null;
+
+    const now = new Date();
+    const endDate = new Date(now.getTime() + 365 * 20 * 24 * 60 * 60 * 1000);
+    const payload = {
+      PageNumber: 1,
+      PageSize: 100,
+      ProductCode: "p_tcaca",
+      Status: [0, 3],
+      PackageEndTimeRangeBegin: now.toISOString().replace("T", " ").slice(0, 19),
+      PackageEndTimeRangeEnd: endDate.toISOString().replace("T", " ").slice(0, 19),
+    };
+
+    try {
+      const response = await this.fetchWithTimeout(`${this.baseUrl}/billing/meter/get-user-resource`, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json, text/plain, */*",
+          "Content-Type": "application/json",
+          "Cookie": cookieHeader,
+          "X-Requested-With": "XMLHttpRequest",
+          "Referer": `${this.baseUrl}/profile/usage`,
+          "Origin": this.baseUrl,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        },
+        body: JSON.stringify(payload),
+      }, config.providerQuotaTimeoutMs);
+
+      if (!response.ok) return null;
+      const data = await response.json() as any;
+      if (data.code !== 0) return null;
+      return this.parseResourceQuota(data);
+    } catch {
+      return null;
+    }
   }
 
   private parseResourceQuota(data: any): { limit: number; remaining: number; used: number } {

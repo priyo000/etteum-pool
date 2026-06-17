@@ -956,3 +956,34 @@ export async function testByokProvider(
     body: JSON.stringify(model ? { model } : {})
   });
 }
+
+// ─── Account Testing & Health ─────────────────────────────────────────────────
+
+export async function testAccount(id: number, model?: string): Promise<{
+  success: boolean;
+  latency_ms?: number;
+  diagnosis?: 'AUTH' | '429' | '5XX' | 'NET' | 'RUNTIME' | null;
+  model?: string;
+  error?: string;
+}> {
+  return fetchApi(`/api/accounts/${id}/test`, {
+    method: 'POST',
+    body: JSON.stringify(model ? { model } : {}),
+    timeoutMs: 35_000,
+  });
+}
+
+export async function clearAccountCooldown(id: number): Promise<{ success: boolean; id: number; provider: string; status: string }> {
+  return fetchApi(`/api/accounts/${id}/clear-cooldown`, { method: 'POST' });
+}
+
+export interface ModelsHealthResponse {
+  overall: 'ok' | 'degraded' | 'down';
+  total_active: number;
+  total_accounts: number;
+  providers: Record<string, { active: number; total: number; error: number; exhausted: number; pending: number; disabled: number }>;
+}
+
+export async function fetchModelsHealth(): Promise<ModelsHealthResponse> {
+  return fetchApi('/api/accounts/models/health');
+}

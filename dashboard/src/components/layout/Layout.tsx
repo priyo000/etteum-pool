@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
+import ModelHealthBadge from "./ModelHealthBadge";
 import { Menu } from "lucide-react";
 
 interface LayoutProps {
@@ -55,6 +56,9 @@ export default function Layout({ onLogout }: LayoutProps) {
         >
           <Menu className="w-5 h-5" />
         </button>
+
+        {/* Model health badge — fixed top-right, above content, below sidebar */}
+        <ModelHealthBadge />
 
         <Outlet />
       </main>

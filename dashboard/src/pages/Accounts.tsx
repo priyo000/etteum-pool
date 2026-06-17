@@ -84,6 +84,7 @@ export default function Accounts() {
   const [instantTokens, setInstantTokens] = useState("");
   const [cookieValue, setCookieValue] = useState("");
   const [bulkText, setBulkText] = useState("");
+  const [importResults, setImportResults] = useState<Array<{ email: string; success: boolean; error?: string }> | null>(null);
   const [addMode, setAddMode] = useState<"single" | "bulk" | "instant" | "pat">("bulk");
   const [bulkBrowserEngine, setBulkBrowserEngine] = useState("camoufox");
   const [bulkHeadless, setBulkHeadless] = useState(true);
@@ -355,11 +356,24 @@ export default function Accounts() {
     try {
       const opts: any = { headless: bulkHeadless, browserEngine: bulkBrowserEngine, concurrency: bulkConcurrency };
       const res = await importAccounts(bulkText, [addDialogProvider], opts) as any;
-      showSuccess(res.message || "Bulk import queued.");
+
+      // Capture per-item results if backend returns them
+      if (Array.isArray(res.results) && res.results.length > 0) {
+        setImportResults(res.results as Array<{ email: string; success: boolean; error?: string }>);
+      } else {
+        // No per-item breakdown — parse bulkText lines to show queued items
+        const lines = bulkText.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+        const parsed = lines.map((line) => {
+          const parts = line.includes("|") ? line.split("|") : line.split(" ");
+          const email = parts[0]?.trim() || line;
+          return { email, success: true };
+        });
+        setImportResults(parsed);
+        showSuccess(res.message || "Bulk import queued.");
+      }
+
       setBulkText("");
-      setAddDialogProvider(null);
       await load();
-      navigate("/bot-logs");
     } catch (err) { showError(err); }
   }
 
@@ -1426,42 +1440,85 @@ export default function Accounts() {
           {/* Bulk mode (all providers) */}
           {addMode === "bulk" && (
             <div className="space-y-4">
-              <div>
-                <label className="text-sm text-[var(--foreground)]">Accounts (email|password per baris)</label>
-                <textarea
-                  value={bulkText}
-                  onChange={(e) => setBulkText(e.target.value)}
-                  className="mt-1 w-full h-40 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
-                  placeholder={"email@example.com|password123\nanother@example.com|pass456"}
-                />
-              </div>
-              <div>
-                <label className="text-sm text-[var(--foreground)]">Browser Engine</label>
-                <select value={bulkBrowserEngine} onChange={(e) => setBulkBrowserEngine(e.target.value)} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
-                  <option value="camoufox">Camoufox (Anti-detect, default)</option>
-                  <option value="chromium">Chromium (Playwright)</option>
-                </select>
-              </div>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
-                  <input type="checkbox" checked={bulkHeadless} onChange={(e) => setBulkHeadless(e.target.checked)} className="h-4 w-4 rounded border-[var(--border)]" />
-                  Run browser headless
-                </label>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-[var(--foreground)]">Concurrent:</label>
-                  <select value={bulkConcurrency} onChange={(e) => setBulkConcurrency(Number(e.target.value))} className="h-8 w-16 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-sm text-[var(--foreground)]">
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                    <option value={5}>5</option>
-                    <option value={10}>10</option>
-                  </select>
+              {/* Results view — shown after import completes */}
+              {importResults !== null ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-[var(--foreground)]">
+                      Import Results ({importResults.filter((r) => r.success).length}/{importResults.length} queued)
+                    </span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {importResults.map((r, i) => (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
+                          r.success
+                            ? "bg-[var(--success)]/10 text-[var(--success)]"
+                            : "bg-[var(--error)]/10 text-[var(--error)]"
+                        }`}
+                      >
+                        <span className="font-medium">{r.success ? "✓" : "✗"}</span>
+                        <span className="font-mono truncate">{r.email}</span>
+                        {!r.success && r.error && (
+                          <span className="ml-auto shrink-0 opacity-80">— {r.error}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end gap-2 mt-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => { setImportResults(null); setAddDialogProvider(null); }}
+                    >
+                      Close
+                    </Button>
+                    <Button onClick={() => navigate("/bot-logs")}>View Logs</Button>
+                  </div>
                 </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setAddDialogProvider(null)}>Cancel</Button>
-                <Button onClick={handleBulkImport}>Import & Login</Button>
-              </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-sm text-[var(--foreground)]">Accounts (email|password per baris)</label>
+                    <textarea
+                      value={bulkText}
+                      onChange={(e) => setBulkText(e.target.value)}
+                      className="mt-1 w-full h-40 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
+                      placeholder={"email@example.com|password123\nanother@example.com|pass456"}
+                    />
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      One per line: <code className="font-mono">email|password</code> or <code className="font-mono">email password</code>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-[var(--foreground)]">Browser Engine</label>
+                    <select value={bulkBrowserEngine} onChange={(e) => setBulkBrowserEngine(e.target.value)} className="mt-1 w-full h-9 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm text-[var(--foreground)]">
+                      <option value="camoufox">Camoufox (Anti-detect, default)</option>
+                      <option value="chromium">Chromium (Playwright)</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+                      <input type="checkbox" checked={bulkHeadless} onChange={(e) => setBulkHeadless(e.target.checked)} className="h-4 w-4 rounded border-[var(--border)]" />
+                      Run browser headless
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-[var(--foreground)]">Concurrent:</label>
+                      <select value={bulkConcurrency} onChange={(e) => setBulkConcurrency(Number(e.target.value))} className="h-8 w-16 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-sm text-[var(--foreground)]">
+                        <option value={1}>1</option>
+                        <option value={2}>2</option>
+                        <option value={3}>3</option>
+                        <option value={5}>5</option>
+                        <option value={10}>10</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { setImportResults(null); setAddDialogProvider(null); }}>Cancel</Button>
+                    <Button onClick={handleBulkImport}>Import & Login</Button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

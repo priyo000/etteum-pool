@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "../db/index";
 import { accounts, requestLogs, vccCards, vccTransactions } from "../db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "../utils/crypto";
 import { broadcast } from "../ws/index";
 import type { NewAccount } from "../db/schema";
@@ -18,6 +18,65 @@ export const accountsRouter = new Hono();
  */
 accountsRouter.get("/warmup-queue", (c) => {
   return c.json({ data: warmupQueue.getProgressByProvider() });
+});
+
+/**
+ * GET /api/accounts/models/health - Global health summary across all providers
+ * NOTE: Must be defined BEFORE /:id routes to avoid route collision
+ */
+accountsRouter.get("/models/health", async (c) => {
+  try {
+    const providerRows = await db
+      .select({
+        provider: accounts.provider,
+        total: sql<number>`count(*)`,
+        active: sql<number>`SUM(CASE WHEN status = 'active' AND enabled = 1 THEN 1 ELSE 0 END)`,
+        error: sql<number>`SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END)`,
+        exhausted: sql<number>`SUM(CASE WHEN status = 'exhausted' THEN 1 ELSE 0 END)`,
+        pending: sql<number>`SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)`,
+        disabled: sql<number>`SUM(CASE WHEN enabled = 0 THEN 1 ELSE 0 END)`,
+      })
+      .from(accounts)
+      .groupBy(accounts.provider);
+
+    const providers: Record<string, { active: number; total: number; error: number; exhausted: number; pending: number; disabled: number }> = {};
+    let totalActive = 0;
+    let totalAccounts = 0;
+    let providersWithAccounts = 0;
+    let providersWithActive = 0;
+
+    for (const row of providerRows) {
+      const active = row.active || 0;
+      const total = row.total || 0;
+      providers[row.provider] = {
+        active,
+        total,
+        error: row.error || 0,
+        exhausted: row.exhausted || 0,
+        pending: row.pending || 0,
+        disabled: row.disabled || 0,
+      };
+      totalActive += active;
+      totalAccounts += total;
+      if (total > 0) {
+        providersWithAccounts++;
+        if (active >= 1) providersWithActive++;
+      }
+    }
+
+    let overall: "ok" | "degraded" | "down";
+    if (providersWithAccounts === 0 || totalActive === 0) {
+      overall = "down";
+    } else if (providersWithActive < providersWithAccounts) {
+      overall = "degraded";
+    } else {
+      overall = "ok";
+    }
+
+    return c.json({ overall, providers, total_active: totalActive, total_accounts: totalAccounts });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
+  }
 });
 
 /**
@@ -376,6 +435,222 @@ accountsRouter.post("/byok/:id/test", async (c) => {
       success: false,
       error: error instanceof Error ? error.message : "Network error",
     });
+  }
+});
+
+/**
+ * POST /api/accounts/:id/test - Test any non-BYOK account
+ * Returns { success, latency_ms, diagnosis, model?, error? }
+ * NOTE: Must be defined BEFORE /:id routes to avoid route collision
+ */
+accountsRouter.post("/:id/test", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "invalid id" }, 400);
+  }
+
+  const account = await db.select().from(accounts)
+    .where(eq(accounts.id, id))
+    .get();
+
+  if (!account) {
+    return c.json({ error: "Account not found" }, 404);
+  }
+
+  if (account.provider === "byok") {
+    return c.json({ error: "Use POST /api/accounts/byok/:id/test for BYOK providers" }, 400);
+  }
+
+  const tokens = typeof account.tokens === "string"
+    ? JSON.parse(account.tokens) as Record<string, unknown>
+    : account.tokens as Record<string, unknown> | null;
+
+  // Build provider-specific test request
+  type Diagnosis = "AUTH" | "429" | "5XX" | "NET" | "RUNTIME" | null;
+
+  let url: string;
+  let headers: Record<string, string> = { "Content-Type": "application/json" };
+  let bodyPayload: Record<string, unknown>;
+  let testModel: string;
+
+  try {
+    switch (account.provider) {
+      case "kiro":
+      case "kiro-pro": {
+        // Kiro/Kiro-Pro: AWS CodeWhisperer endpoint, requires specific AWS headers
+        const accessToken = String(tokens?.access_token || "");
+        if (!accessToken) {
+          return c.json({ success: false, diagnosis: "AUTH" as Diagnosis, error: "No access_token in account", latency_ms: 0 });
+        }
+        testModel = account.provider === "kiro-pro" ? "kp-haiku-4.5" : "claude-haiku-4.5";
+        url = "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse";
+        headers = {
+          "Content-Type": "application/x-amz-json-1.0",
+          "Accept": "application/vnd.amazon.eventstream, application/json, */*",
+          "Authorization": `Bearer ${accessToken}`,
+          "X-Amz-Target": "AmazonCodeWhisperStreamingService.GenerateAssistantResponse",
+          "x-amzn-codewhisper-optout": "true",
+          "x-amzn-kiro-agent-mode": "vibe",
+          "User-Agent": "KiroIDE/compatible pool-proxy/1.0.0",
+          "x-amz-user-agent": "pool-proxy/1.0.0",
+        };
+        // Use a simple non-streaming payload for health check
+        bodyPayload = {
+          conversationState: {
+            chatTriggerType: "MANUAL",
+            currentMessage: { userInputMessage: { content: "Hi", userInputMessageContext: {} } },
+            history: [],
+          },
+        };
+        break;
+      }
+      case "codebuddy": {
+        // CodeBuddy: api_key/access_token/session_token as Bearer + optional Cookie + CSRF + browser headers
+        const apiKey = String(tokens?.api_key || tokens?.access_token || tokens?.session_token || "");
+        const webCookie = String(tokens?.web_cookie || tokens?.cookies || "");
+        if (!apiKey && !webCookie) {
+          return c.json({ success: false, diagnosis: "AUTH" as Diagnosis, error: "No api_key or cookies in account", latency_ms: 0 });
+        }
+        testModel = "cb-haiku-4.5";
+        url = "https://www.codebuddy.ai/api/chat/completions";
+        headers = {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Conversation-ID": crypto.randomUUID(),
+          "X-Conversation-Request-ID": crypto.randomUUID().replace(/-/g, ""),
+          "X-Conversation-Message-ID": crypto.randomUUID().replace(/-/g, ""),
+          "X-Request-ID": crypto.randomUUID().replace(/-/g, ""),
+          "X-Domain": "www.codebuddy.ai",
+          "X-Product": "SaaS",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        };
+        if (apiKey) {
+          headers["Authorization"] = `Bearer ${apiKey}`;
+          headers["X-Api-Key"] = apiKey;
+        }
+        if (webCookie) headers["Cookie"] = webCookie;
+        if (tokens?.csrf_token) headers["X-CSRF-Token"] = String(tokens.csrf_token);
+        bodyPayload = { model: "claude-haiku-4.5", messages: [{ role: "user", content: "Hi" }], max_tokens: 1 };
+        break;
+      }
+      case "canva": {
+        const accessToken = String(tokens?.access_token || "");
+        if (!accessToken) {
+          return c.json({ success: false, diagnosis: "AUTH" as Diagnosis, error: "No access_token in account", latency_ms: 0 });
+        }
+        testModel = "canva-claude-haiku-4.5";
+        url = "https://api.canva.com/rest/v1/ai/chat/completions";
+        headers["Authorization"] = `Bearer ${accessToken}`;
+        bodyPayload = { model: testModel, messages: [{ role: "user", content: "Hi" }], max_tokens: 1 };
+        break;
+      }
+      case "codex": {
+        const accessToken = String(tokens?.access_token || "");
+        if (!accessToken) {
+          return c.json({ success: false, diagnosis: "AUTH" as Diagnosis, error: "No access_token in account", latency_ms: 0 });
+        }
+        testModel = "gpt-4.1-mini";
+        url = "https://api.openai.com/v1/chat/completions";
+        headers["Authorization"] = `Bearer ${accessToken}`;
+        bodyPayload = { model: testModel, messages: [{ role: "user", content: "Hi" }], max_tokens: 1 };
+        break;
+      }
+      case "qoder": {
+        const cookiesRaw = String(tokens?.cookies || tokens?.web_cookie || "");
+        if (!cookiesRaw) {
+          return c.json({ success: false, diagnosis: "AUTH" as Diagnosis, error: "No cookies in account", latency_ms: 0 });
+        }
+        testModel = "qoder-claude-haiku";
+        url = "https://api.qoder.com/v1/chat/completions";
+        headers["Cookie"] = cookiesRaw;
+        bodyPayload = { model: testModel, messages: [{ role: "user", content: "Hi" }], max_tokens: 1 };
+        break;
+      }
+      default: {
+        return c.json({ error: `Unsupported provider for test: ${account.provider}` }, 400);
+      }
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    const startTime = Date.now();
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(bodyPayload),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    const latencyMs = Date.now() - startTime;
+
+    let diagnosis: Diagnosis = null;
+    if (response.status === 401 || response.status === 403) {
+      diagnosis = "AUTH";
+    } else if (response.status === 429) {
+      diagnosis = "429";
+    } else if (response.status >= 500 && response.status < 600) {
+      diagnosis = "5XX";
+    }
+
+    if (diagnosis !== null) {
+      const text = await response.text().catch(() => "");
+      return c.json({ success: false, latency_ms: latencyMs, diagnosis, model: testModel, error: text.slice(0, 200) });
+    }
+
+    return c.json({ success: true, latency_ms: latencyMs, diagnosis: null, model: testModel });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const isAbort = msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("timeout");
+    return c.json({
+      success: false,
+      latency_ms: 30000,
+      diagnosis: isAbort ? ("NET" as Diagnosis) : ("RUNTIME" as Diagnosis),
+      error: msg,
+    });
+  }
+});
+
+/**
+ * POST /api/accounts/:id/clear-cooldown - Reset account to active status
+ * NOTE: Must be defined BEFORE /:id routes to avoid route collision
+ */
+accountsRouter.post("/:id/clear-cooldown", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) {
+    return c.json({ error: "invalid id" }, 400);
+  }
+
+  try {
+    const result = await db
+      .update(accounts)
+      .set({
+        status: "active",
+        errorMessage: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(accounts.id, id))
+      .returning();
+
+    if (result.length === 0) {
+      return c.json({ error: "Account not found" }, 404);
+    }
+
+    const updated = result[0]!;
+    pool.invalidate(updated.provider as ProviderName);
+    broadcast({
+      type: "account_status",
+      data: { id: updated.id, status: "active", provider: updated.provider, error: null },
+    });
+
+    return c.json({ success: true, id: updated.id, provider: updated.provider, status: "active" });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
   }
 });
 

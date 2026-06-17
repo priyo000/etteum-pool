@@ -8,7 +8,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { updateAccount, type AccountPatch } from "@/lib/api";
 
 export interface EditAccountTarget {
@@ -32,10 +33,17 @@ interface EditAccountModalProps {
 
 const STATUSES: AccountPatch["status"][] = ["active", "exhausted", "error", "pending"];
 
+const STATUS_DOT: Record<string, string> = {
+  active:    "bg-[var(--success)]",
+  exhausted: "bg-[var(--warning)]",
+  error:     "bg-[var(--error)]",
+  pending:   "bg-[var(--muted-foreground)]",
+};
+
 /**
- * Inline edit modal for a single account. Fields are sent as a `PATCH`
+ * Inline edit modal for a single account. Fields are sent as a PATCH
  * partial — empty fields are omitted from the request body. Email is
- * intentionally NOT editable because it's part of a unique index.
+ * intentionally NOT editable because it is part of a unique index.
  */
 export function EditAccountModal({ open, onOpenChange, account, onSaved, onError }: EditAccountModalProps) {
   const [status, setStatus] = useState<string>(account?.status || "active");
@@ -47,7 +55,6 @@ export function EditAccountModal({ open, onOpenChange, account, onSaved, onError
   const [clearError, setClearError] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Reset form when target changes
   function syncFromAccount(a: EditAccountTarget | null) {
     setStatus(a?.status ?? "active");
     setEnabled(a?.enabled ?? true);
@@ -58,8 +65,6 @@ export function EditAccountModal({ open, onOpenChange, account, onSaved, onError
     setClearError(false);
   }
 
-  // Sync when account prop changes (parent passed new target)
-  // Use object identity so re-opening with same id refreshes state.
   if (account && account.id !== (window as any).__lastEditTarget) {
     (window as any).__lastEditTarget = account.id;
     syncFromAccount(account);
@@ -114,10 +119,10 @@ export function EditAccountModal({ open, onOpenChange, account, onSaved, onError
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit account</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-base font-semibold text-[var(--foreground)]">Edit account</DialogTitle>
+          <DialogDescription className="text-xs text-[var(--muted-foreground)]">
             {account ? (
-              <span className="font-mono text-xs">{account.email} · {account.provider}</span>
+              <span className="font-mono">{account.email} · {account.provider}</span>
             ) : (
               "Select an account first."
             )}
@@ -125,8 +130,10 @@ export function EditAccountModal({ open, onOpenChange, account, onSaved, onError
         </DialogHeader>
 
         {account && (
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
+          <div className="space-y-4 py-1">
+
+            {/* Status */}
+            <div className="space-y-1.5">
               <label className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
                 Status
               </label>
@@ -136,94 +143,126 @@ export function EditAccountModal({ open, onOpenChange, account, onSaved, onError
                     key={s}
                     type="button"
                     onClick={() => setStatus(s as string)}
-                    className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border transition-colors",
                       status === s
                         ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--foreground)]"
                         : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--primary)]/50"
-                    }`}
+                    )}
                   >
+                    <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", STATUS_DOT[s ?? ""] ?? "bg-[var(--muted-foreground)]")} />
                     {s}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                id="edit-enabled"
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-[var(--border)] accent-[var(--primary)]"
-              />
-              <label htmlFor="edit-enabled" className="text-xs">
-                Enabled (account is part of the load-balancer pool)
-              </label>
-            </div>
+            <div className="border-t border-[var(--border)]" />
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                  Quota Limit
-                </label>
-                <Input
-                  type="number"
-                  placeholder={account.quotaLimit !== undefined && account.quotaLimit !== null ? String(account.quotaLimit) : "0"}
-                  value={quotaLimit}
-                  onChange={(e) => setQuotaLimit(e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                  Quota Remaining
-                </label>
-                <Input
-                  type="number"
-                  placeholder={account.quotaRemaining !== undefined && account.quotaRemaining !== null ? String(account.quotaRemaining) : "0"}
-                  value={quotaRemaining}
-                  onChange={(e) => setQuotaRemaining(e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
+            {/* Enabled toggle */}
+            <div className="space-y-1.5">
               <label className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                New Password (optional)
+                Enabled
+              </label>
+              <button
+                type="button"
+                onClick={() => setEnabled((v) => !v)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                  enabled
+                    ? "bg-[var(--success)]/15 text-[var(--success)] hover:bg-[var(--success)]/25"
+                    : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--muted-foreground)]/20"
+                )}
+                aria-pressed={enabled}
+                title={enabled ? "Click to disable" : "Click to enable"}
+              >
+                {enabled
+                  ? <CheckCircle2 className="w-3.5 h-3.5" />
+                  : <XCircle className="w-3.5 h-3.5" />
+                }
+                {enabled ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+
+            <div className="border-t border-[var(--border)]" />
+
+            {/* Password */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                Password
               </label>
               <Input
                 type="password"
-                placeholder="Leave blank to keep current"
+                placeholder="Leave blank to keep unchanged"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-9 text-sm"
+                className="text-xs"
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="border-t border-[var(--border)]" />
+
+            {/* Quota */}
+            <div className="space-y-2">
               <label className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                Error Message
+                Quota
               </label>
-              <Input
-                placeholder={account.errorMessage || "—"}
-                value={errorMessage}
-                onChange={(e) => setErrorMessage(e.target.value)}
-                disabled={clearError}
-                className="h-9 text-xs font-mono"
-              />
-              {account.errorMessage && (
-                <label className="flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
-                  <input
-                    type="checkbox"
-                    checked={clearError}
-                    onChange={(e) => setClearError(e.target.checked)}
-                    className="h-3 w-3 rounded border-[var(--border)] accent-[var(--primary)]"
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Limit</label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 1000"
+                    value={quotaLimit}
+                    onChange={(e) => setQuotaLimit(e.target.value)}
+                    className="text-xs h-8"
                   />
-                  Clear stored error message
-                </label>
-              )}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-[var(--muted-foreground)]">Remaining</label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 750"
+                    value={quotaRemaining}
+                    onChange={(e) => setQuotaRemaining(e.target.value)}
+                    className="text-xs h-8"
+                  />
+                </div>
+              </div>
             </div>
+
+            {/* Error message (only if account has one) */}
+            {(account.errorMessage || errorMessage) && (
+              <>
+                <div className="border-t border-[var(--border)]" />
+                <div className="space-y-2">
+                  <label className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                    Error Message
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Error message"
+                    value={errorMessage}
+                    onChange={(e) => setErrorMessage(e.target.value)}
+                    className="text-xs font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setClearError((v) => !v)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border transition-colors",
+                      clearError
+                        ? "border-[var(--error)]/50 bg-[var(--error)]/10 text-[var(--error)]"
+                        : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--error)]/40"
+                    )}
+                    aria-pressed={clearError}
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", clearError ? "bg-[var(--error)]" : "bg-[var(--muted-foreground)]")} />
+                    Clear stored error message
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 

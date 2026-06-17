@@ -5,11 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
   Search,
   RefreshCw,
   Trash2,
   Pencil,
   ExternalLink,
+  MoreHorizontal,
+  LogIn,
+  Flame,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { useTimedMessage } from "@/hooks/useTimedMessage";
 import { useWsEvent } from "@/hooks/useWebSocket";
@@ -21,15 +33,34 @@ import { EditAccountModal, type EditAccountTarget } from "@/components/accounts/
 import { SavedPresetsBar } from "@/components/accounts/SavedPresetsBar";
 import { exportAccountsCSV, exportAccountsJSON } from "@/lib/account-export";
 import type { AccountFilterState } from "@/lib/account-presets";
+import { cn } from "@/lib/utils";
 import {
   bulkDeleteAccounts,
   deleteAccount,
   fetchAccounts,
+  loginAccount,
   loginAccounts,
   refreshAccountQuota,
   toggleAccountEnabled,
   warmupAccounts,
 } from "@/lib/api";
+
+/** Map provider to its model id prefix */
+const PROVIDER_PREFIX: Record<string, string> = {
+  kiro: "kiro-",
+  "kiro-pro": "kp-",
+  codebuddy: "cb-",
+  canva: "canva-",
+  codex: "codex-",
+  qoder: "qd-",
+};
+
+/** Panel URLs for providers that support "open panel" */
+const PANEL_URLS: Record<string, string> = {
+  kiro: "https://app.kiro.dev/settings/account",
+  "kiro-pro": "https://app.kiro.dev/settings/account",
+  qoder: "https://qoder.com/account/profile",
+};
 
 type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "codex" | "qoder";
 
@@ -54,6 +85,15 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "error" | "secondar
   error: "error",
   pending: "secondary",
   disabled: "secondary",
+};
+
+const PROVIDER_COLORS: Record<Provider, string> = {
+  kiro: "var(--color-kiri, #f59e0b)",
+  "kiro-pro": "var(--color-kiri, #f59e0b)",
+  codebuddy: "var(--color-codebuddy, #3b82f6)",
+  canva: "var(--color-canva, #8b5cf6)",
+  codex: "var(--color-codex, #10b981)",
+  qoder: "var(--color-qoder, #ef4444)",
 };
 
 function labelProvider(p: string) {
@@ -381,10 +421,10 @@ export default function AccountsAll() {
       <Card className="border-[var(--border)]">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[900px]">
               <thead>
-                <tr className="border-b border-[var(--border)]">
-                  <th className="w-10 p-4">
+                <tr className="border-b border-[var(--border)] bg-[var(--secondary)]/50">
+                  <th className="w-10 px-3 py-2.5">
                     <input
                       type="checkbox"
                       aria-label="Select all visible"
@@ -394,24 +434,29 @@ export default function AccountsAll() {
                       className="h-4 w-4 rounded border-[var(--border)] accent-[var(--primary)]"
                     />
                   </th>
-                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4">Email</th>
-                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4">Provider</th>
-                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4">Status</th>
-                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4">Enabled</th>
-                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4 hidden sm:table-cell">Credit</th>
-                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4">Actions</th>
+                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide px-3 py-2.5">Email</th>
+                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide px-3 py-2.5">Provider</th>
+                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide px-3 py-2.5">Status</th>
+                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide px-3 py-2.5">Enabled</th>
+                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide px-3 py-2.5 hidden sm:table-cell">Credit</th>
+                  <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide px-3 py-2.5">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.slice((page - 1) * perPage, page * perPage).map((account) => {
                   const isEnabled = account.enabled !== false;
                   const isSelected = selection.isSelected(account.id);
+                  const providerColor = PROVIDER_COLORS[account.provider];
                   return (
                     <tr
                       key={account.id}
-                      className={`border-b border-[var(--border)] last:border-0 hover:bg-[var(--secondary)]/50 ${isEnabled ? "" : "opacity-50"} ${isSelected ? "bg-[var(--primary)]/5" : ""}`}
+                      className={cn(
+                        "border-b border-[var(--border)] last:border-0 transition-colors hover:bg-[var(--secondary)]/30",
+                        !isEnabled && "opacity-50",
+                        isSelected && "bg-[var(--primary)]/5"
+                      )}
                     >
-                      <td className="w-10 p-4">
+                      <td className="w-10 px-3 py-2.5">
                         <input
                           type="checkbox"
                           aria-label={`Select ${account.email}`}
@@ -420,41 +465,85 @@ export default function AccountsAll() {
                           className="h-4 w-4 rounded border-[var(--border)] accent-[var(--primary)]"
                         />
                       </td>
-                      <td className="p-4 text-sm text-[var(--foreground)]">
-                        <div>{account.email}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-sm font-medium text-[var(--foreground)]">{account.email}</div>
                         {account.errorMessage && (
-                          <div className="text-xs text-[var(--error)] mt-1 line-clamp-1" title={account.errorMessage}>
+                          <div className="text-xs text-[var(--error)] mt-0.5 line-clamp-1" title={account.errorMessage}>
                             {account.errorMessage}
                           </div>
                         )}
                       </td>
-                      <td className="p-4">
+                      <td className="px-3 py-2.5">
                         <Link
                           to={`/accounts/${account.provider}`}
-                          className="text-xs text-[var(--primary)] hover:underline"
+                          className="inline-flex items-center gap-1.5 text-xs hover:underline"
                         >
-                          {labelProvider(account.provider)}
+                          <span
+                            className="inline-block h-2 w-2 rounded-full shrink-0"
+                            style={{ backgroundColor: providerColor }}
+                          />
+                          <span className="text-[var(--foreground)]">{labelProvider(account.provider)}</span>
                         </Link>
                       </td>
-                      <td className="p-4">
+                      <td className="px-3 py-2.5">
                         <Badge variant={STATUS_VARIANT[account.status]}>{account.status}</Badge>
                       </td>
-                      <td className="p-4">
+                      <td className="px-3 py-2.5">
                         <Badge variant={isEnabled ? "success" : "secondary"}>
                           {isEnabled ? "On" : "Off"}
                         </Badge>
                       </td>
-                      <td className="p-4 hidden sm:table-cell text-xs text-[var(--muted-foreground)]">
+                      <td className="px-3 py-2.5 hidden sm:table-cell text-xs text-[var(--muted-foreground)]">
                         {formatCredit(account.quotaRemaining)}/{formatCredit(account.quotaLimit)}
                       </td>
-                      <td className="p-4">
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(account)} title="Edit">
-                            <Pencil className="w-4 h-4 text-[var(--info)]" />
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-0.5">
+                          {(account.provider === "kiro" || account.provider === "kiro-pro" || account.provider === "qoder") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => {
+                                const url = PANEL_URLS[account.provider];
+                                if (url) window.open(url, "_blank");
+                              }}
+                              title={`Open ${account.provider === "qoder" ? "Qoder" : "Kiro"} Panel`}
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-[var(--info)]" />
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(account)} title="Edit">
+                            <Pencil className="w-3.5 h-3.5 text-[var(--info)]" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleSingleDelete(account.id)} title="Delete">
-                            <Trash2 className="w-4 h-4 text-[var(--error)]" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleSingleDelete(account.id)} title="Delete">
+                            <Trash2 className="w-3.5 h-3.5 text-[var(--error)]" />
                           </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7" title="More actions">
+                                <MoreHorizontal className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => loginAccount(account.id).then(() => { showSuccess(`Login queued for ${account.email}`); load(); }).catch(showError)}>
+                                <LogIn className="w-3.5 h-3.5 mr-2" />
+                                Login
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => refreshAccountQuota(account.id).then(() => { showSuccess(`Refreshed quota for ${account.email}`); load(); }).catch(showError)}>
+                                <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                                Refresh Quota
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => warmupAccounts([account.id]).then((res: any) => { showSuccess(res?.message || `Queued ${account.email} for warmup.`); }).catch(showError)}>
+                                <Flame className="w-3.5 h-3.5 mr-2" />
+                                Warmup
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => toggleAccountEnabled(account.id, !isEnabled).then(() => { showSuccess(`${!isEnabled ? "Enabled" : "Disabled"} ${account.email}`); load(); }).catch(showError)}>
+                                {isEnabled ? <XCircle className="w-3.5 h-3.5 mr-2" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-2" />}
+                                {isEnabled ? "Disable" : "Enable"}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </td>
                     </tr>
@@ -462,7 +551,7 @@ export default function AccountsAll() {
                 })}
                 {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-sm text-[var(--muted-foreground)]">
+                    <td colSpan={7} className="px-3 py-12 text-center text-sm text-[var(--muted-foreground)]">
                       No accounts match these filters
                     </td>
                   </tr>
