@@ -16,6 +16,7 @@ import { PUDIDIL_FILTERS } from "./proxy/filters";
 import { loadFilterCache } from "./proxy/filter-cache";
 import { ensureModelMappingTable, seedModelMappings, loadModelMappingCache } from "./proxy/model-mapping";
 import { refreshByokModels } from "./proxy/providers/registry";
+import { ensureComboTable, loadComboCache } from "./proxy/combo";
 
 // Run database migrations on startup
 await runMigrations();
@@ -49,6 +50,15 @@ try {
   await loadModelMappingCache();
 } catch (e) {
   console.error("[DB] Model mapping init skipped:", e instanceof Error ? e.message : e);
+}
+
+// Ensure combo_rules table exists and load combo cache
+try {
+  ensureComboTable();
+  await loadComboCache();
+  console.log("[Combo] Combo fallback system initialized");
+} catch (e) {
+  console.error("[Combo] Init skipped:", e instanceof Error ? e.message : e);
 }
 
 // Pre-warm BYOK provider cache so ownsModel() works from the first request

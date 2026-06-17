@@ -782,8 +782,23 @@ export class CodexProvider extends BaseProvider {
       const usedPercent = Number(primary.used_percent ?? 0);
       const resetAt = primary.reset_at ? new Date(Number(primary.reset_at) * 1000) : null;
 
+      const toIso = (value: unknown): string | null => {
+        if (value == null || value === "") return null;
+        if (typeof value === "number") return new Date(value > 10_000_000_000 ? value : value * 1000).toISOString();
+        const parsed = Date.parse(String(value));
+        return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+      };
+      const subscriptionSource = data.subscription || data.account_plan || data.billing || data.plan || data.entitlement || {};
+      const subscription = {
+        status: String(subscriptionSource.status || data.subscription_status || data.plan_status || ""),
+        expires_at: toIso(subscriptionSource.expires_at || subscriptionSource.expire_at || subscriptionSource.ends_at || subscriptionSource.current_period_end || data.expires_at || data.plan_expires_at),
+        renews_at: toIso(subscriptionSource.renews_at || subscriptionSource.renewal_date || subscriptionSource.next_billing_date || subscriptionSource.current_period_end || data.renews_at || data.renewal_date),
+        source_keys: Object.keys(subscriptionSource).slice(0, 20),
+      };
+
       const codexQuota = {
-        plan_type: String(data.plan_type || ""),
+        plan_type: String(data.plan_type || subscriptionSource.plan_type || subscriptionSource.type || ""),
+        subscription,
         primary: {
           used_percent: Number(primary.used_percent ?? 0),
           limit_window_seconds: Number(primary.limit_window_seconds ?? 0),

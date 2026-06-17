@@ -68,6 +68,15 @@ class AccountPool {
   }
 
   /**
+   * Quick check: does this provider have any active accounts available?
+   * Used by combo chain to skip providers that are fully exhausted.
+   */
+  async hasActiveAccounts(provider: ProviderName): Promise<boolean> {
+    const accounts = await this.getActiveAccounts(provider);
+    return accounts.length > 0;
+  }
+
+  /**
    * Get the next available account for a provider using configured method.
    */
   async getNextAccount(provider: ProviderName): Promise<Account | null> {
@@ -230,7 +239,7 @@ class AccountPool {
   }
 
   private async fetchActiveAccounts(provider: ProviderName): Promise<Account[]> {
-    return db
+    const rows = await db
       .select()
       .from(accounts)
       .where(
@@ -240,6 +249,33 @@ class AccountPool {
           eq(accounts.enabled, true),
         )
       );
+
+    // Auto-exhaust accounts that have 0 quota remaining (avoids wasting retries).
+    // This handles the case where quota was consumed externally or billing synced to 0
+    // but the account was never warmup'd to update its status.
+    const zeroQuotaIds: number[] = [];
+    const healthy = rows.filter((account) => {
+      const limit = Number(account.quotaLimit || 0);
+      const remaining = Number(account.quotaRemaining || 0);
+      // Only auto-exhaust if limit is known (>0) and remaining is 0
+      if (limit > 0 && remaining <= 0) {
+        zeroQuotaIds.push(account.id);
+        return false;
+      }
+      return true;
+    });
+
+    // Mark zero-quota accounts as exhausted in background (non-blocking)
+    if (zeroQuotaIds.length > 0) {
+      void (async () => {
+        for (const id of zeroQuotaIds) {
+          await this.markExhausted(id);
+        }
+        console.log(`[Pool] Auto-exhausted ${zeroQuotaIds.length} ${provider} accounts with 0 quota.`);
+      })();
+    }
+
+    return healthy;
   }
 
   /**

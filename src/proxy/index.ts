@@ -456,8 +456,16 @@ async function handleChatCompletion(body: ChatCompletionRequest) {
   // Claude Code's hardcoded haiku/sonnet/opus ids -> a model in the pool).
   body = { ...body, model: resolveModelAlias(normalizeModelId(body.model)) };
   const isStream = body.stream === true;
-  const { result, account, provider, durationMs, compressionStats } = await routeRequest(body, isStream);
+  const { result, account, provider, durationMs, compressionStats, comboInfo } = await routeRequest(body, isStream);
   let shouldReleaseTracking = true;
+
+  // Log combo fallback info if a combo chain was used
+  if (comboInfo) {
+    console.log(
+      `[Combo] Request used fallback: ${comboInfo.originalModel} → ${comboInfo.usedProvider}/${comboInfo.usedModel} ` +
+      `(rule: "${comboInfo.ruleName}", steps: ${comboInfo.attemptedSteps.join(" → ")})`
+    );
+  }
 
   try {
     const promptTokens = result.promptTokens || result.response?.usage?.prompt_tokens || estimateMessagesTokens(body.messages);
@@ -507,6 +515,14 @@ async function handleChatCompletion(body: ChatCompletionRequest) {
         creditSource,
         creditUnit: providers[provider].getProviderCreditUnit(body.model),
         creditRate: providers[provider].getProviderCreditRate(body.model),
+        combo: comboInfo ? {
+          ruleName: comboInfo.ruleName,
+          requestedModel: comboInfo.originalModel,
+          usedProvider: comboInfo.usedProvider,
+          usedModel: comboInfo.usedModel,
+          usedStep: comboInfo.usedStep,
+          attemptedSteps: comboInfo.attemptedSteps,
+        } : undefined,
       },
     }),
     responseBody: prepareLogBody(result.response),
@@ -571,9 +587,14 @@ proxyRouter.get("/v1/models", async (c) => {
   // Without this, the sync getModels() returns stale/empty supportedModels.
   await refreshByokModels();
   const models = getAllModels();
+
+  // Append combo virtual models so they appear as selectable models
+  const { getComboVirtualModels } = await import("./combo");
+  const comboModels = getComboVirtualModels();
+
   return c.json({
     object: "list",
-    data: models,
+    data: [...models, ...comboModels],
   });
 });
 

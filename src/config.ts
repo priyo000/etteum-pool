@@ -2,24 +2,25 @@ import path from "path";
 
 const projectRoot = path.resolve(import.meta.dir, "..");
 
+function resolveProjectPath(envValue: string | undefined, fallback: string): string {
+  const raw = envValue || fallback;
+  if (path.isAbsolute(raw)) return raw;
+  return path.resolve(projectRoot, raw);
+}
+
 export const config = {
   port: Number(process.env.PORT) || 1930,
   dashboardPort: Number(process.env.DASHBOARD_PORT) || 1931,
   apiKey: process.env.API_KEY || "pool-proxy-secret-key",
-  databasePath: process.env.DATABASE_PATH || path.join(projectRoot, "data/poolprox3.db"),
-  authScriptPath:
-    process.env.AUTH_SCRIPT_PATH ||
-    path.join(projectRoot, "scripts/auth/login.py"),
-  pythonPath:
-    process.env.PYTHON_PATH ||
-    path.join(
-      projectRoot,
-      "scripts/auth/.venv",
-      process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
-    ),
-  authScriptCwd:
-    process.env.AUTH_SCRIPT_CWD ||
-    path.join(projectRoot, "scripts/auth"),
+  databasePath: resolveProjectPath(process.env.DATABASE_PATH, "data/poolprox3.db"),
+  authScriptPath: resolveProjectPath(process.env.AUTH_SCRIPT_PATH, "scripts/auth/login.py"),
+  pythonPath: resolveProjectPath(
+    process.env.PYTHON_PATH,
+    process.platform === "win32"
+      ? "scripts/auth/.venv/Scripts/python.exe"
+      : "scripts/auth/.venv/bin/python",
+  ),
+  authScriptCwd: resolveProjectPath(process.env.AUTH_SCRIPT_CWD, "scripts/auth"),
   proxyUrl: process.env.PROXY_URL || "",
   encryptionKey:
     process.env.ENCRYPTION_KEY || "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",

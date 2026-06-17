@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Save, RefreshCw, Zap, Flame, Globe, Wand2 } from "lucide-react";
+import { Save, RefreshCw, Zap, Flame, Download, Upload, AlertTriangle, FileDown, FileUp, Database, Globe, Wand2 } from "lucide-react";
 import {
   fetchSettings,
   updateSettings,
   fetchProviderList,
   fetchAutoWarmupStatus,
+  exportBackup,
+  importBackup,
   type AutoWarmupStatus,
 } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
@@ -54,6 +56,10 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const { message, setMessage } = useTimedMessage<string>(null, 3000);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+  const [importResult, setImportResult] = useState<any>(null);
 
   const providerListApi = useApi<{ data: string[] }>(fetchProviderList, []);
 
@@ -100,6 +106,62 @@ export default function Settings() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleExport() {
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      const data = await exportBackup();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `etteum-backup-${date}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMessage("Backup exported successfully.");
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function handleImport() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      setBackupBusy(true);
+      setBackupError(null);
+      setImportResult(null);
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.version) {
+          setBackupError("Invalid backup file. Missing version field.");
+          return;
+        }
+        if (importMode === "replace" && !confirm("⚠️ Replace mode will DELETE all existing data before importing. Are you sure?")) {
+          return;
+        }
+        const result = await importBackup(data, importMode);
+        setImportResult(result.results || result);
+        setMessage(`Import completed (${importMode} mode).`);
+        await load();
+      } catch (err) {
+        setBackupError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBackupBusy(false);
+      }
+    };
+    input.click();
   }
 
   const globalMethod = form.load_balancing_method || "round_robin";
@@ -552,6 +614,115 @@ export default function Settings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Backup / Export / Import */}
+      <Card className="border-[var(--border)]">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Database className="w-4 h-4 text-[var(--primary)]" />
+            Backup & Restore
+          </CardTitle>
+          <CardDescription>
+            Export or import your accounts, settings, filter rules, model mappings, and proxy pool
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {backupError && (
+            <div className="rounded-md bg-[var(--error)]/10 p-3 text-sm text-[var(--error)] flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              {backupError}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Export */}
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <FileDown className="w-4 h-4 text-[var(--success)]" />
+                <span className="text-sm font-medium text-[var(--foreground)]">Export Backup</span>
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Download a JSON file containing all your accounts, settings, filter rules, model mappings, and proxy pool.
+              </p>
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={backupBusy} className="w-full">
+                <Download className="w-4 h-4 mr-2" />
+                {backupBusy ? "Exporting..." : "Export to File"}
+              </Button>
+            </div>
+
+            {/* Import */}
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <FileUp className="w-4 h-4 text-[var(--info)]" />
+                <span className="text-sm font-medium text-[var(--foreground)]">Import Backup</span>
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Restore from a previously exported JSON backup file.
+              </p>
+              <div className="space-y-2">
+                <label className="text-xs text-[var(--muted-foreground)]">Import Mode</label>
+                <select
+                  value={importMode}
+                  onChange={(e) => setImportMode(e.target.value as "merge" | "replace")}
+                  className="w-full h-8 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-[var(--foreground)]"
+                >
+                  <option value="merge">Merge — skip existing, add new</option>
+                  <option value="replace">Replace — delete all, import fresh</option>
+                </select>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleImport} disabled={backupBusy} className="w-full">
+                <Upload className="w-4 h-4 mr-2" />
+                {backupBusy ? "Importing..." : "Import from File"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Import Results */}
+          {importResult && (
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 p-4 space-y-2">
+              <p className="text-sm font-medium text-[var(--foreground)]">Import Results</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                {importResult.accounts && (
+                  <div className="rounded-md bg-[var(--background)] p-2 border border-[var(--border)]">
+                    <p className="font-medium text-[var(--foreground)]">Accounts</p>
+                    <p className="text-[var(--success)]">+{importResult.accounts.imported} imported</p>
+                    {importResult.accounts.skipped > 0 && <p className="text-[var(--muted-foreground)]">{importResult.accounts.skipped} skipped</p>}
+                    {importResult.accounts.errors > 0 && <p className="text-[var(--error)]">{importResult.accounts.errors} errors</p>}
+                  </div>
+                )}
+                {importResult.settings && (
+                  <div className="rounded-md bg-[var(--background)] p-2 border border-[var(--border)]">
+                    <p className="font-medium text-[var(--foreground)]">Settings</p>
+                    <p className="text-[var(--success)]">+{importResult.settings.imported} imported</p>
+                  </div>
+                )}
+                {importResult.filterRules && (
+                  <div className="rounded-md bg-[var(--background)] p-2 border border-[var(--border)]">
+                    <p className="font-medium text-[var(--foreground)]">Filter Rules</p>
+                    <p className="text-[var(--success)]">+{importResult.filterRules.imported} imported</p>
+                  </div>
+                )}
+                {importResult.modelMappings && (
+                  <div className="rounded-md bg-[var(--background)] p-2 border border-[var(--border)]">
+                    <p className="font-medium text-[var(--foreground)]">Model Mappings</p>
+                    <p className="text-[var(--success)]">+{importResult.modelMappings.imported} imported</p>
+                  </div>
+                )}
+                {importResult.proxyPool && (
+                  <div className="rounded-md bg-[var(--background)] p-2 border border-[var(--border)]">
+                    <p className="font-medium text-[var(--foreground)]">Proxy Pool</p>
+                    <p className="text-[var(--success)]">+{importResult.proxyPool.imported} imported</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-[var(--muted-foreground)]">
+            💡 Backup includes accounts (with passwords), settings, filter rules, model mappings, and proxy pool. Request logs and usage stats are NOT included.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

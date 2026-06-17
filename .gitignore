@@ -83,3 +83,6 @@ drizzle/
 
 # Nested git repos (external services)
 services/windsurf-api/
+
+.etteum.log
+.etteum.err.log

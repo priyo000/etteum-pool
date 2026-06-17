@@ -48,8 +48,21 @@ interface CompressionStats {
 }
 
 function getCreditMeta(req: RequestLog) {
-  const body = req.requestBody as { _poolprox?: { creditSource?: string; creditUnit?: string; creditRate?: number } } | null | undefined;
+  const body = req.requestBody as { _poolprox?: { creditSource?: string; creditUnit?: string; creditRate?: number; combo?: ComboTrace } } | null | undefined;
   return body?._poolprox || {};
+}
+
+interface ComboTrace {
+  ruleName: string;
+  requestedModel: string;
+  usedProvider: string;
+  usedModel: string;
+  usedStep: number;
+  attemptedSteps: string[];
+}
+
+function getComboTrace(req: RequestLog): ComboTrace | undefined {
+  return getCreditMeta(req).combo as ComboTrace | undefined;
 }
 
 function getStatusColor(status: string): "success" | "warning" | "error" {
@@ -239,6 +252,10 @@ export default function Requests() {
               {typeof getCreditMeta(selected).creditRate === "number" && <> · Rate: <span className="text-[var(--foreground)]">{getCreditMeta(selected).creditRate}</span></>}
             </div>
 
+            {getComboTrace(selected) && (
+              <ComboTracePanel trace={getComboTrace(selected)!} />
+            )}
+
             {selected.compressionStats && (
               <CompressionPanel
                 stats={selected.compressionStats}
@@ -291,6 +308,29 @@ const TECHNIQUE_LABELS: Record<keyof NonNullable<CompressionStats["byTechnique"]
   imageDedupe: "Image dedup",
   cacheMarkers: "Cache markers",
 };
+
+function ComboTracePanel({ trace }: { trace: ComboTrace }) {
+  return (
+    <div className="mt-3 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-xs">
+      <div className="font-semibold text-blue-400 mb-2">Combo Fallback Trace</div>
+      <div className="text-[var(--muted-foreground)]">
+        Requested: <span className="font-mono text-[var(--foreground)]">{trace.requestedModel}</span>{" "}
+        → Used: <span className="font-mono text-[var(--foreground)]">{trace.usedProvider}/{trace.usedModel}</span>
+      </div>
+      <div className="mt-2 space-y-1">
+        {trace.attemptedSteps.map((step, i) => (
+          <div key={`${step}-${i}`} className="flex items-center gap-2">
+            <span className={`w-5 text-center rounded ${i === trace.usedStep ? "bg-green-500/20 text-green-400" : "bg-[var(--accent)] text-[var(--muted-foreground)]"}`}>
+              {i + 1}
+            </span>
+            <span className="font-mono text-[var(--foreground)]">{step}</span>
+            {i === trace.usedStep && <span className="text-green-400">success</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function formatNum(n: number): string {
   return n.toLocaleString("en-US");

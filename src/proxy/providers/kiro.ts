@@ -51,27 +51,40 @@ interface KiroTokens {
  */
 /**
  * Pro-tier model catalog. kiro-pro is the SAME upstream (AWS CodeWhisperer) as
- * standard kiro — it differs only by which models it exposes (Opus / kp- ids,
+ * standard kiro — it differs only by which models it exposes (Opus / krp- ids,
  * served from a separate Pro account pool) and the variant "chip" the dashboard
  * shows. So it is a *variant* of this one provider class, not a subclass.
  */
 const KIRO_PRO_MODELS: ModelInfo[] = [
-  { id: "kp-auto", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
-  { id: "kp-opus-4.8", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
-  { id: "kp-opus-4.8-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
-  { id: "kp-opus-4.7", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
-  { id: "kp-opus-4.7-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
-  { id: "kp-opus-4.6", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
-  { id: "kp-opus-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
-  { id: "kp-opus-4.5", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
-  { id: "kp-sonnet-4.6", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.012 / 1000, creditSource: "estimated" },
-  { id: "kp-sonnet-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.015 / 1000, creditSource: "estimated" },
-  { id: "kp-haiku-4.5", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.003 / 1000, creditSource: "estimated" },
-  { id: "kp-haiku-4.5-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.004 / 1000, creditSource: "estimated" },
+  { id: "krp-auto", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-opus-4.8", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-opus-4.8-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-opus-4.7", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-opus-4.7-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-opus-4.6", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-opus-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.022 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-opus-4.5", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.018 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-sonnet-4.6", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.012 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-sonnet-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.015 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-haiku-4.5", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.003 / 1000, creditSource: "estimated" },
+  { id: "krp-claude-haiku-4.5-thinking", object: "model", created: Date.now(), owned_by: "kiro-pro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.004 / 1000, creditSource: "estimated" },
 ];
 
-/** Map kp- prefixed model IDs to the actual Kiro API model names. */
+/** Map Kiro Pro model IDs to the actual Kiro API model names. Supports legacy kp-* aliases. */
 const KIRO_PRO_MODEL_MAP: Record<string, string> = {
+  "krp-auto": "auto",
+  "krp-claude-opus-4.8": "claude-opus-4.8",
+  "krp-claude-opus-4.8-thinking": "claude-opus-4.8-thinking",
+  "krp-claude-opus-4.7": "claude-opus-4.7",
+  "krp-claude-opus-4.7-thinking": "claude-opus-4.7-thinking",
+  "krp-claude-opus-4.6": "claude-opus-4.6",
+  "krp-claude-opus-4.6-thinking": "claude-opus-4.6-thinking",
+  "krp-claude-opus-4.5": "claude-opus-4.5",
+  "krp-claude-sonnet-4.6": "claude-sonnet-4.6",
+  "krp-claude-sonnet-4.6-thinking": "claude-sonnet-4.6-thinking",
+  "krp-claude-haiku-4.5": "claude-haiku-4.5",
+  "krp-claude-haiku-4.5-thinking": "claude-haiku-4.5-thinking",
+  // Legacy aliases kept for backward compatibility.
   "kp-auto": "auto",
   "kp-opus-4.8": "claude-opus-4.8",
   "kp-opus-4.8-thinking": "claude-opus-4.8-thinking",
@@ -89,13 +102,13 @@ const KIRO_PRO_MODEL_MAP: Record<string, string> = {
 export type KiroVariant = "standard" | "pro";
 
 export class KiroProvider extends BaseProvider {
-  /** "standard" = kiro (catch-all); "pro" = kiro-pro (kp- models, Pro pool). */
+  /** "standard" = kiro (kr-* models); "pro" = kiro-pro (krp-* models, Pro pool). */
   readonly variant: KiroVariant;
   name = "kiro";
-  // Standard kiro is the catch-all (any unmatched model + bare claude/sonnet/
-  // haiku). It speaks Anthropic natively (AWS CodeWhisperer event-stream). See
-  // registry.ts and proxy/index.ts. The "pro" variant resets isFallback and
-  // owns only its kp- prefixed models (see constructor + ownsModel).
+  // Standard kiro exposes kr-* public model ids and keeps legacy bare aliases
+  // for compatibility. It speaks Anthropic natively (AWS CodeWhisperer event-stream).
+  // See registry.ts and proxy/index.ts. The "pro" variant resets isFallback and
+  // owns only its krp- prefixed models (plus legacy kp-* aliases).
   override isFallback = true;
   override nativeFormat: "openai" | "anthropic" = "anthropic";
 
@@ -110,19 +123,24 @@ export class KiroProvider extends BaseProvider {
   }
 
   override ownsModel(model: string): boolean {
-    if (this.variant === "pro") return model.toLowerCase().startsWith("kp-");
-    const m = model.toLowerCase().replace("-thinking", "");
+    const lower = model.toLowerCase();
+    if (this.variant === "pro") return lower.startsWith("krp-") || lower.startsWith("kp-");
+
+    const m = lower.replace("-thinking", "");
     if (this.getModelInfo(model)) return true;
+    if (m.startsWith("kr-")) return true;
+
+    // Legacy bare aliases kept for backward compatibility. /v1/models exposes kr-* only.
     if (m === "auto") return true;
     if (m === "deepseek-3.2" || m === "glm-5") return true;
     if (m.startsWith("minimax-") || m.startsWith("qwen")) return true;
-    // bare claude family (no provider prefix) belongs to kiro standard tier
     return m.includes("claude") || m.includes("sonnet") || m.includes("haiku");
   }
 
-  /** For the pro variant, resolve kp- ids to the real Kiro API model names. */
+  /** Resolve public Kiro model ids to the real upstream Kiro API model names. */
   private resolveModel(model: string): string {
-    return this.variant === "pro" ? (KIRO_PRO_MODEL_MAP[model] || model) : model;
+    if (this.variant === "pro") return KIRO_PRO_MODEL_MAP[model] || model;
+    return model.startsWith("kr-") ? model.slice(3) : model;
   }
 
   private baseUrl = "https://q.us-east-1.amazonaws.com";
@@ -135,31 +153,31 @@ export class KiroProvider extends BaseProvider {
     // creditRate here is only used as fallback when upstream credits are unavailable.
 
     // Auto (1.0x baseline)
-    { id: "auto", object: "model", created: Date.now(), owned_by: "kiro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.008 / 1000, creditSource: "estimated" },
+    { id: "kr-auto", object: "model", created: Date.now(), owned_by: "kiro", context_window: 1000000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.008 / 1000, creditSource: "estimated" },
     // Claude Haiku 4.5 (0.4x)
-    { id: "claude-haiku-4.5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.003 / 1000, creditSource: "estimated" },
+    { id: "kr-claude-haiku-4.5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.003 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4 (1.3x)
-    { id: "claude-sonnet-4", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.010 / 1000, creditSource: "estimated" },
+    { id: "kr-claude-sonnet-4", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.010 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4.5 (1.3x)
-    { id: "claude-sonnet-4.5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.010 / 1000, creditSource: "estimated" },
+    { id: "kr-claude-sonnet-4.5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.010 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4.5 Thinking (1.3x with extended thinking)
-    { id: "claude-sonnet-4.5-thinking", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.013 / 1000, creditSource: "estimated" },
+    { id: "kr-claude-sonnet-4.5-thinking", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.013 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4.6 (1.5x)
-    { id: "claude-sonnet-4.6", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.012 / 1000, creditSource: "estimated" },
+    { id: "kr-claude-sonnet-4.6", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.012 / 1000, creditSource: "estimated" },
     // Claude Sonnet 4.6 Thinking (1.5x with extended thinking)
-    { id: "claude-sonnet-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.015 / 1000, creditSource: "estimated" },
+    { id: "kr-claude-sonnet-4.6-thinking", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: true, creditUnit: "credit", creditRate: 0.015 / 1000, creditSource: "estimated" },
     // DeepSeek 3.2 (0.25x)
-    { id: "deepseek-3.2", object: "model", created: Date.now(), owned_by: "kiro", context_window: 164000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.002 / 1000, creditSource: "estimated" },
+    { id: "kr-deepseek-3.2", object: "model", created: Date.now(), owned_by: "kiro", context_window: 164000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.002 / 1000, creditSource: "estimated" },
     // GLM-5 (0.5x)
-    { id: "glm-5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.004 / 1000, creditSource: "estimated" },
+    { id: "kr-glm-5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.004 / 1000, creditSource: "estimated" },
     // GLM-5 Thinking (0.5x with thinking)
-    { id: "glm-5-thinking", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: false, creditUnit: "credit", creditRate: 0.005 / 1000, creditSource: "estimated" },
+    { id: "kr-glm-5-thinking", object: "model", created: Date.now(), owned_by: "kiro", context_window: 200000, max_output: 64000, thinking: true, vision: false, creditUnit: "credit", creditRate: 0.005 / 1000, creditSource: "estimated" },
     // MiniMax M2.1 (0.15x)
-    { id: "minimax-m2.1", object: "model", created: Date.now(), owned_by: "kiro", context_window: 196000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.001 / 1000, creditSource: "estimated" },
+    { id: "kr-minimax-m2.1", object: "model", created: Date.now(), owned_by: "kiro", context_window: 196000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.001 / 1000, creditSource: "estimated" },
     // MiniMax M2.5 (0.25x)
-    { id: "minimax-m2.5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 196000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.002 / 1000, creditSource: "estimated" },
+    { id: "kr-minimax-m2.5", object: "model", created: Date.now(), owned_by: "kiro", context_window: 196000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.002 / 1000, creditSource: "estimated" },
     // Qwen3 Coder Next (0.05x)
-    { id: "qwen3-coder-next", object: "model", created: Date.now(), owned_by: "kiro", context_window: 256000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.0004 / 1000, creditSource: "estimated" },
+    { id: "kr-qwen3-coder-next", object: "model", created: Date.now(), owned_by: "kiro", context_window: 256000, max_output: 64000, thinking: false, vision: false, creditUnit: "credit", creditRate: 0.0004 / 1000, creditSource: "estimated" },
   ];
 
   private getTokens(account: Account): KiroTokens | null {
@@ -178,7 +196,7 @@ export class KiroProvider extends BaseProvider {
     account: Account,
     request: ChatCompletionRequest
   ): Promise<ProviderResult> {
-    if (this.variant === "pro") request = { ...request, model: this.resolveModel(request.model) };
+    request = { ...request, model: this.resolveModel(request.model) };
     const tokens = this.getTokens(account);
     if (!tokens?.access_token) {
       return { success: false, error: "No access token available" };
@@ -237,7 +255,7 @@ export class KiroProvider extends BaseProvider {
     account: Account,
     request: ChatCompletionRequest
   ): Promise<ProviderResult> {
-    if (this.variant === "pro") request = { ...request, model: this.resolveModel(request.model) };
+    request = { ...request, model: this.resolveModel(request.model) };
     const tokens = this.getTokens(account);
     if (!tokens?.access_token) {
       return { success: false, error: "No access token available" };

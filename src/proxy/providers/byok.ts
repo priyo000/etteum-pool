@@ -51,8 +51,10 @@ export class ByokProvider extends BaseProvider {
   override isFallback = false;
   override nativeFormat: "openai" | "anthropic" = "openai";
 
-  // Synchronous prefix → account cache (required for ownsModel sync check)
+  // Synchronous prefix → accounts cache (supports multiple keys per prefix for round-robin)
   private prefixCache = new Map<string, CachedByokAccount>();
+  private prefixAccounts = new Map<string, CachedByokAccount[]>(); // all accounts per prefix
+  private prefixRoundRobin = new Map<string, number>(); // round-robin index per prefix
   private prefixes: string[] = [];
   private cacheExpiry = 0;
   private readonly CACHE_TTL = 10_000; // 10 seconds
@@ -83,8 +85,10 @@ export class ByokProvider extends BaseProvider {
 
     // Build new data in temporary variables first to avoid race condition
     const newPrefixCache = new Map<string, CachedByokAccount>();
+    const newPrefixAccounts = new Map<string, CachedByokAccount[]>();
     const newPrefixes: string[] = [];
     const newSupportedModels: ModelInfo[] = [];
+    const seenModelIds = new Set<string>();
 
     for (const account of byokAccounts) {
       if (!account.enabled) continue;
@@ -99,12 +103,23 @@ export class ByokProvider extends BaseProvider {
       const prefix = tokens.model_prefix || account.email;
       const expiresAt = Date.now() + this.CACHE_TTL;
 
-      newPrefixCache.set(prefix, { account, config: tokens, expiresAt });
-      newPrefixes.push(prefix);
+      const entry = { account, config: tokens, expiresAt };
+      newPrefixCache.set(prefix, entry);
+      if (!newPrefixes.includes(prefix)) newPrefixes.push(prefix);
 
+      // Collect all accounts per prefix for round-robin routing
+      if (!newPrefixAccounts.has(prefix)) newPrefixAccounts.set(prefix, []);
+      newPrefixAccounts.get(prefix)!.push(entry);
+
+      // Deduplicate models: multiple accounts with the same model_prefix
+      // share the same models (batch keys). Only register each model once.
       for (const model of tokens.models) {
+        const modelId = `${prefix}-${model}`;
+        if (seenModelIds.has(modelId)) continue;
+        seenModelIds.add(modelId);
+
         newSupportedModels.push({
-          id: `${prefix}-${model}`,
+          id: modelId,
           object: "model",
           created: Math.floor(Date.now() / 1000),
           owned_by: `byok:${prefix}`,
@@ -116,6 +131,7 @@ export class ByokProvider extends BaseProvider {
 
     // Atomically swap in the new data
     this.prefixCache = newPrefixCache;
+    this.prefixAccounts = newPrefixAccounts;
     this.prefixes = newPrefixes;
     this.supportedModels = newSupportedModels;
     this.cacheExpiry = Date.now() + this.CACHE_TTL;
@@ -211,7 +227,23 @@ export class ByokProvider extends BaseProvider {
     await this.ensureCache();
     const prefix = this.findPrefix(model);
     if (!prefix) return null;
-    return this.prefixCache.get(prefix)?.account ?? null;
+
+    // Round-robin across all accounts sharing this prefix (batch keys)
+    const allAccounts = this.prefixAccounts.get(prefix);
+    if (!allAccounts || allAccounts.length === 0) {
+      return this.prefixCache.get(prefix)?.account ?? null;
+    }
+
+    // Filter to only active/enabled accounts
+    const active = allAccounts.filter((e) => e.account.status === "active" && e.account.enabled);
+    if (active.length === 0) {
+      // Fallback: try any account (including error ones for retry)
+      return allAccounts[0]?.account ?? null;
+    }
+
+    const idx = (this.prefixRoundRobin.get(prefix) || 0) % active.length;
+    this.prefixRoundRobin.set(prefix, idx + 1);
+    return active[idx]!.account;
   }
 
   /** Get all BYOK models for /v1/models endpoint. */
@@ -255,15 +287,72 @@ export class ByokProvider extends BaseProvider {
     return !!(tokens?.base_url && tokens?.models?.length);
   }
 
-  async fetchQuota(): Promise<{
+  async fetchQuota(account: Account): Promise<{
     success: boolean;
     quota?: { limit: number; remaining: number; used: number; resetAt?: Date | string | null };
     error?: string;
   }> {
-    return {
-      success: true,
-      quota: { limit: -1, remaining: -1, used: 0, resetAt: null },
-    };
+    const tokens = this.parseTokens(account.tokens);
+    if (!tokens?.base_url) return { success: false, error: "No base_url configured" };
+
+    const apiKey = this.getApiKey(account);
+    if (!apiKey) return { success: false, error: "No API key" };
+
+    const model = tokens.models?.[0];
+    if (!model) return { success: true, quota: { limit: -1, remaining: -1, used: 0 } };
+
+    // Send a minimal request to check if the key is valid and extract rate limit headers
+    try {
+      const url = `${tokens.base_url.replace(/\/$/, "")}/chat/completions`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          ...tokens.headers,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 1,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      // Extract rate limit info from response headers (many providers send these)
+      const limitRequests = Number(response.headers.get("x-ratelimit-limit-requests") || 0);
+      const remainingRequests = Number(response.headers.get("x-ratelimit-remaining-requests") || 0);
+      const limitTokens = Number(response.headers.get("x-ratelimit-limit-tokens") || 0);
+      const remainingTokens = Number(response.headers.get("x-ratelimit-remaining-tokens") || 0);
+      const resetAt = response.headers.get("x-ratelimit-reset-requests") || response.headers.get("x-ratelimit-reset") || null;
+
+      if (response.status === 401 || response.status === 403) {
+        return { success: false, error: `API key invalid or expired (HTTP ${response.status})` };
+      }
+      if (response.status === 429) {
+        return {
+          success: true,
+          quota: {
+            limit: limitRequests || limitTokens || 0,
+            remaining: 0,
+            used: limitRequests || limitTokens || 0,
+            resetAt,
+          },
+        };
+      }
+
+      // Key is valid — return whatever rate limit info we got
+      const limit = limitRequests || limitTokens || -1;
+      const remaining = remainingRequests || remainingTokens || -1;
+      const used = limit > 0 && remaining >= 0 ? limit - remaining : 0;
+
+      return {
+        success: true,
+        quota: { limit, remaining, used, resetAt },
+      };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   // ── OpenAI-compatible ──────────────────────────────────────────────

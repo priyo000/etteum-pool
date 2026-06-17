@@ -159,7 +159,7 @@ export default function ApiKey() {
   -H "Authorization: Bearer ${showKey ? apiKey : "sk-pool-***"}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "claude-sonnet-4",
+    "model": "kr-claude-sonnet-4",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'`}
             </pre>

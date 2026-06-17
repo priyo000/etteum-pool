@@ -18,6 +18,7 @@ import { useWsEvent } from "@/hooks/useWebSocket";
 import {
   completeCodexOAuthCallbackUrl,
   createAccount,
+  createByokBatch,
   createByokProvider,
   deleteByokProvider,
   fetchAccounts,
@@ -27,6 +28,7 @@ import {
   fetchByokProviders,
   fetchSettings,
   fetchWarmupQueue,
+  fetchAccountsSummary,
   getCodexAuthorize,
   importAccounts,
   loginAccounts,
@@ -42,7 +44,7 @@ import {
   type ByokProvider,
 } from "@/lib/api";
 
-type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "codex" | "qoder";
+type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "codex" | "qoder" | "byok";
 
 interface Account {
   id: number;
@@ -115,14 +117,25 @@ export default function Accounts() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const [accountsRes, queueRes, warmupQueueRes, autoWarmupRes, settingsRes] = await Promise.all([
-        fetchAccounts() as Promise<{ data: Account[] }>,
+      const [summaryRes, queueRes, warmupQueueRes, autoWarmupRes, settingsRes] = await Promise.all([
+        fetchAccountsSummary().catch(() => ({ summary: [] })),
         fetchAuthQueue().catch(() => null),
         fetchWarmupQueue().catch(() => null),
         fetchAutoWarmupStatus().catch(() => null),
         fetchSettings().catch(() => null) as Promise<{ data: Record<string, string> } | null>,
       ]);
-      setAccounts(accountsRes.data || []);
+      // Convert summary rows into pseudo-Account objects for the overview cards
+      const pseudoAccounts: Account[] = (summaryRes.summary || []).flatMap((row) =>
+        Array.from({ length: row.count }, (_, i) => ({
+          id: -(i + 1),
+          email: "",
+          provider: row.provider as Provider,
+          status: row.status,
+          quotaLimit: row.totalQuotaLimit / Math.max(1, row.count),
+          quotaRemaining: row.totalQuotaRemaining / Math.max(1, row.count),
+        }))
+      );
+      setAccounts(pseudoAccounts);
       setQueue(queueRes);
       setWarmupQueue(warmupQueueRes);
       setAutoWarmup(autoWarmupRes);
@@ -598,15 +611,32 @@ export default function Accounts() {
       return;
     }
 
+    // Detect batch mode: multiple keys separated by newlines
+    const keys = byokForm.api_key.split(/[\n\r]+/).map(k => k.trim()).filter(Boolean);
+    const isBatch = keys.length > 1;
+
     try {
-      await createByokProvider({
-        label: byokForm.label,
-        base_url: byokForm.base_url,
-        api_key: byokForm.api_key,
-        format: byokForm.format,
-        models,
-      });
-      showSuccess(`BYOK provider "${byokForm.label}" created successfully`);
+      if (isBatch) {
+        const res = await createByokBatch({
+          label: byokForm.label,
+          base_url: byokForm.base_url,
+          api_keys: byokForm.api_key,
+          format: byokForm.format,
+          models,
+        });
+        const msg = `Created ${res.created} BYOK accounts for "${byokForm.label}"` +
+          (res.errors > 0 ? ` (${res.errors} errors)` : "");
+        showSuccess(msg);
+      } else {
+        await createByokProvider({
+          label: byokForm.label,
+          base_url: byokForm.base_url,
+          api_key: byokForm.api_key.trim(),
+          format: byokForm.format,
+          models,
+        });
+        showSuccess(`BYOK provider "${byokForm.label}" created successfully`);
+      }
       setByokForm({ label: "", base_url: "", api_key: "", format: "auto", models: "" });
       setByokEditId(null);
       setByokDialogOpen(false);
@@ -636,9 +666,9 @@ export default function Accounts() {
         models,
       };
 
-      // Only include api_key if user entered a new one (not the masked placeholder)
-      if (byokForm.api_key && byokForm.api_key.trim() && byokForm.api_key !== BYOK_KEY_PLACEHOLDER) {
-        updateData.api_key = byokForm.api_key;
+      // Include api_key if user has a value (send current key to keep or update)
+      if (byokForm.api_key && byokForm.api_key.trim()) {
+        updateData.api_key = byokForm.api_key.trim();
       }
 
       await updateByokProvider(byokEditId, updateData);
@@ -659,7 +689,7 @@ export default function Accounts() {
     setByokForm({
       label: provider.label,
       base_url: provider.base_url,
-      api_key: BYOK_KEY_PLACEHOLDER, // Show masked indicator that key exists
+      api_key: provider.api_key || "", // Show actual key from backend
       format: provider.format,
       models: provider.models.join(", "),
     });
@@ -899,9 +929,14 @@ export default function Accounts() {
               <p className="text-sm text-[var(--muted-foreground)]">Bring Your Own Key — use your own API providers</p>
             </div>
           </div>
-          <Button onClick={() => setByokDialogOpen(true)} className="gap-2 shadow-sm">
-            <Plus className="h-4 w-4" /> Add Provider
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => navigate("/accounts/byok")} className="gap-2">
+              View All Keys
+            </Button>
+            <Button onClick={() => setByokDialogOpen(true)} className="gap-2 shadow-sm">
+              <Plus className="h-4 w-4" /> Add Provider
+            </Button>
+          </div>
         </div>
 
         {byokProviders.length === 0 ? (
@@ -1138,23 +1173,24 @@ export default function Accounts() {
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-2">
-                  API Key
+                  API Key{!byokEditId && " (batch: one per line)"}
                   {byokEditId && (
                     <span className="inline-flex items-center gap-1 text-xs text-[var(--success)] font-normal bg-[var(--success)]/10 px-1.5 py-0.5 rounded-full">✓ Saved</span>
                   )}
                 </label>
-                <Input
-                  type="password"
+                <textarea
                   value={byokForm.api_key}
                   onChange={(e) => setByokForm({ ...byokForm, api_key: e.target.value })}
-                  onFocus={() => {
-                    if (byokEditId && byokForm.api_key === BYOK_KEY_PLACEHOLDER) {
-                      setByokForm({ ...byokForm, api_key: "" });
-                    }
-                  }}
-                  placeholder={byokEditId ? 'Enter new key to replace, or leave blank' : 'sk-...'}
-                  className="focus:ring-1 focus:ring-[var(--ring)]"
+                  placeholder={byokEditId ? 'Enter new key to replace, or leave blank' : 'Paste one or more API keys (one per line)\nsk-...\nsk-...\nsk-...'}
+                  rows={byokEditId ? 2 : 4}
+                  className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm font-mono focus:ring-1 focus:ring-[var(--ring)] resize-y"
+                  spellCheck={false}
                 />
+                {!byokEditId && byokForm.api_key.split(/[\n\r]+/).filter(Boolean).length > 1 && (
+                  <p className="text-xs text-[var(--success)]">
+                    Batch mode: {byokForm.api_key.split(/[\n\r]+/).filter(Boolean).length} keys detected — each will become a separate account
+                  </p>
+                )}
                 {byokEditId && (
                   <p className="text-xs text-[var(--muted-foreground)]">Leave blank to keep existing API key</p>
                 )}

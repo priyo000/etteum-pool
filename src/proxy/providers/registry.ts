@@ -32,7 +32,8 @@ const byok = new ByokProvider();
 // Priority order. canva/qoder/codex/kiro-pro have unique prefixes; codex is
 // listed before codebuddy so the literal "gpt-5-codex" resolves to codex while
 // codebuddy keeps its own "gpt-5*"/"gpt-5.x-codex" models. byok checks dynamic
-// prefixes from DB accounts. kiro is the fallback.
+// prefixes from DB accounts. kiro is the fallback. Kiro standard uses kr-* and
+// Kiro Pro uses krp-* public model IDs.
 const PROVIDER_ORDER = [canva, qoder, codex, kiroPro, byok, codebuddy, kiro] as const;
 
 export const providers = {

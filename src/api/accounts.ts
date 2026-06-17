@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "../db/index";
 import { accounts, requestLogs, vccCards, vccTransactions } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "../utils/crypto";
 import { broadcast } from "../ws/index";
 import type { NewAccount } from "../db/schema";
@@ -10,8 +10,12 @@ import { warmupQueue } from "../auth/warmup-queue";
 import { warmupAccount } from "../auth/warmup-runner";
 import { pool, type ProviderName } from "../proxy/pool";
 import { activateQoderPat } from "../proxy/providers/qoder";
+import { byokBatchRouter } from "./byok-batch";
 
 export const accountsRouter = new Hono();
+
+// Mount batch BYOK sub-router (must be before /:id routes)
+accountsRouter.route("/byok/batch", byokBatchRouter);
 
 /**
  * GET /api/accounts/warmup-queue - Get warmup progress per provider
@@ -21,17 +25,67 @@ accountsRouter.get("/warmup-queue", (c) => {
 });
 
 /**
- * GET /api/accounts - List all accounts
+ * GET /api/accounts - List accounts with optional server-side filtering.
+ * Query params:
+ *   provider - filter by provider (e.g. "kiro", "codebuddy")
+ *   status   - filter by status (e.g. "active", "exhausted", "error")
+ *   limit    - max rows (default: all; use for pagination)
+ *   offset   - skip rows (default: 0)
+ *   summary  - if "true", return only counts per provider (fast overview)
  */
 accountsRouter.get("/", async (c) => {
-  const allAccounts = await db.select().from(accounts);
+  const providerFilter = c.req.query("provider");
+  const statusFilter = c.req.query("status");
+  const limitParam = c.req.query("limit");
+  const offsetParam = c.req.query("offset");
+  const summaryMode = c.req.query("summary") === "true";
 
-  // Don't expose passwords in response
-  const sanitized = allAccounts.map((acc) => ({
-    ...acc,
-    password: "***",
-    tokens: acc.tokens ? "[set]" : null,
-  }));
+  // Fast summary mode: return counts per provider without loading all rows
+  if (summaryMode) {
+    const rows = await db
+      .select({
+        provider: accounts.provider,
+        status: accounts.status,
+        count: sql<number>`COUNT(*)`,
+        totalQuotaRemaining: sql<number>`COALESCE(SUM(${accounts.quotaRemaining}), 0)`,
+        totalQuotaLimit: sql<number>`COALESCE(SUM(${accounts.quotaLimit}), 0)`,
+      })
+      .from(accounts)
+      .groupBy(accounts.provider, accounts.status);
+    return c.json({ summary: rows });
+  }
+
+  // Build WHERE conditions
+  const conditions = [];
+  if (providerFilter) conditions.push(eq(accounts.provider, providerFilter));
+  if (statusFilter) conditions.push(eq(accounts.status, statusFilter));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Query with optional limit/offset
+  let query = db.select().from(accounts);
+  if (where) query = query.where(where) as any;
+
+  const limit = limitParam ? Math.min(Math.max(1, Number(limitParam) || 500), 2000) : undefined;
+  const offset = offsetParam ? Math.max(0, Number(offsetParam) || 0) : 0;
+
+  if (limit) query = (query as any).limit(limit).offset(offset);
+
+  const allAccounts = await query;
+
+  // Don't expose passwords in response (except BYOK where key is shown)
+  const sanitized = allAccounts.map((acc) => {
+    let apiKeyPreview: string | undefined;
+    if (acc.provider === "byok") {
+      try { apiKeyPreview = decrypt(acc.password); } catch { /* ignore */ }
+    }
+    return {
+      ...acc,
+      password: "***",
+      tokens: acc.tokens ? "[set]" : null,
+      apiKeyPreview,
+    };
+  });
 
   return c.json({ data: sanitized, total: sanitized.length });
 });
@@ -130,11 +184,15 @@ accountsRouter.get("/byok", async (c) => {
     const tokens = typeof acc.tokens === "string"
       ? JSON.parse(acc.tokens)
       : acc.tokens;
+    // Decrypt API key for display (local tool)
+    let apiKey = ""; try { apiKey = decrypt(acc.password); } catch { /* ignore */ }
+
 
     return {
       id: acc.id,
       label: acc.email,
       base_url: tokens?.base_url || "",
+      api_key: apiKey,
       format: tokens?.format || "auto",
       models: tokens?.models || [],
       model_prefix: tokens?.model_prefix || acc.email,
@@ -661,6 +719,67 @@ accountsRouter.post("/bulk", async (c) => {
 });
 
 /**
+ * POST /api/accounts/filter - Filter accounts that don't exist yet
+ *
+ * Body: { emails: ["email:password", ...] }
+ * Returns per-provider breakdown of which accounts are missing.
+ */
+accountsRouter.post("/filter", async (c) => {
+  const body = await c.req.json<{ emails: string[] }>();
+
+  if (!body.emails || !Array.isArray(body.emails)) {
+    return c.json({ error: "emails array is required" }, 400);
+  }
+
+  // Parse email:password pairs
+  const parsed: Array<{ email: string; password: string }> = [];
+  for (const line of body.emails) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const sepIdx = trimmed.indexOf(":");
+    if (sepIdx === -1) continue;
+    const email = trimmed.slice(0, sepIdx).trim().toLowerCase();
+    const password = trimmed.slice(sepIdx + 1).trim();
+    if (email && password) {
+      parsed.push({ email, password });
+    }
+  }
+
+  if (parsed.length === 0) {
+    return c.json({ error: "No valid email:password pairs found" }, 400);
+  }
+
+  // Get all existing accounts
+  const allAccounts = await db.select({ email: accounts.email, provider: accounts.provider }).from(accounts);
+
+  // Build a set of "provider:email" for fast lookup
+  const existingSet = new Set(allAccounts.map((a) => `${a.provider}:${a.email.toLowerCase()}`));
+
+  const allProviders = ["kiro", "kiro-pro", "codebuddy", "canva", "codex", "qoder"];
+
+  // For each provider, find which emails are missing
+  const result: Record<string, Array<{ email: string; password: string }>> = {};
+  let totalMissing = 0;
+
+  for (const provider of allProviders) {
+    const missing: Array<{ email: string; password: string }> = [];
+    for (const { email, password } of parsed) {
+      if (!existingSet.has(`${provider}:${email}`)) {
+        missing.push({ email, password });
+      }
+    }
+    result[provider] = missing;
+    totalMissing += missing.length;
+  }
+
+  return c.json({
+    totalInput: parsed.length,
+    totalMissing,
+    providers: result,
+  });
+});
+
+/**
  * PATCH /api/accounts/:id - Update account
  */
 accountsRouter.patch("/:id", async (c) => {
@@ -756,6 +875,43 @@ accountsRouter.post("/toggle-all", async (c) => {
 
   const count = await pool.setEnabledByProvider(body.provider as ProviderName, body.enabled);
   return c.json({ provider: body.provider, enabled: body.enabled, count });
+});
+
+/**
+ * DELETE /api/accounts/provider/:provider - Delete all accounts for a provider
+ */
+accountsRouter.delete("/provider/:provider", async (c) => {
+  const provider = c.req.param("provider") as ProviderName;
+
+  if (!provider) {
+    return c.json({ error: "provider is required" }, 400);
+  }
+
+  const providerAccounts = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(eq(accounts.provider, provider));
+
+  const ids = providerAccounts.map((account) => account.id);
+  if (ids.length === 0) {
+    return c.json({ provider, deleted: 0, success: true });
+  }
+
+  for (const id of ids) {
+    await db.update(requestLogs).set({ accountId: null }).where(eq(requestLogs.accountId, id));
+    await db.update(vccCards).set({ usedByAccountId: null }).where(eq(vccCards.usedByAccountId, id));
+    await db.delete(vccTransactions).where(eq(vccTransactions.accountId, id));
+  }
+
+  const deleted = await db
+    .delete(accounts)
+    .where(eq(accounts.provider, provider))
+    .returning({ id: accounts.id });
+
+  pool.invalidate(provider);
+  broadcast({ type: "accounts_updated", data: { provider, deleted: deleted.length } });
+
+  return c.json({ provider, deleted: deleted.length, success: true });
 });
 
 /**

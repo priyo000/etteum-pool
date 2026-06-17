@@ -14,7 +14,9 @@ import {
   Globe,
   Sparkles,
   Filter,
+  ListFilter,
   Plug,
+  Layers,
   LogOut,
   X,
   Sun,
@@ -51,6 +53,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Image Studio", path: "/image-studio", icon: Sparkles },
       { label: "Integration", path: "/integration", icon: Plug },
+      { label: "Account Filter", path: "/account-filter", icon: ListFilter },
     ],
   },
   {
@@ -60,6 +63,7 @@ const navSections: NavSection[] = [
       { label: "Proxy Pool", path: "/proxy-pool", icon: Globe },
       { label: "VCC Pool", path: "/vcc-pool", icon: CreditCard },
       { label: "Filter Rules", path: "/filter-rules", icon: Filter },
+      { label: "Combo Fallback", path: "/combo", icon: Layers },
       { label: "Proxy Settings", path: "/settings", icon: Sliders },
     ],
   },

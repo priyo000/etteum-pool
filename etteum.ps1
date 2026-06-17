@@ -18,6 +18,7 @@ if ($env:POOLPROX_HOME -and (Test-Path $env:POOLPROX_HOME)) {
 
 $PidFile = Join-Path $ProjectDir ".etteum.pid"
 $LogFile = Join-Path $ProjectDir ".etteum.log"
+$ErrFile = Join-Path $ProjectDir ".etteum.err.log"
 $EnvFile = Join-Path $ProjectDir ".env"
 
 function Get-EnvValue([string]$key, [string]$default) {
@@ -48,8 +49,8 @@ function Test-PortInUse([int]$port) {
 }
 
 function Invoke-Start {
-  $apiPort = [int](Get-EnvValue "PORT" "1630")
-  $dashPort = [int](Get-EnvValue "DASHBOARD_PORT" "1631")
+  $apiPort = [int](Get-EnvValue "PORT" "1930")
+  $dashPort = [int](Get-EnvValue "DASHBOARD_PORT" "1931")
 
   if (Test-PortInUse $apiPort) {
     Write-Host "Port $apiPort already in use. Run: .\etteum.ps1 stop" -ForegroundColor Red
@@ -62,7 +63,7 @@ function Invoke-Start {
 
   Write-Host "Starting Etteum..."
   $proc = Start-Process -FilePath "bun" -ArgumentList "scripts/production.ts","--skip-build" `
-    -WorkingDirectory $ProjectDir -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile `
+    -WorkingDirectory $ProjectDir -RedirectStandardOutput $LogFile -RedirectStandardError $ErrFile `
     -WindowStyle Hidden -PassThru
   $proc.Id | Out-File -FilePath $PidFile -Encoding ascii
   Start-Sleep -Seconds 1
@@ -92,8 +93,8 @@ function Invoke-Status {
   if (Test-Running) {
     $procId = Get-Content $PidFile
     Write-Host "Etteum is running (PID $procId)" -ForegroundColor Green
-    Write-Host "  Backend:   http://localhost:$(Get-EnvValue 'PORT' '1630')"
-    Write-Host "  Dashboard: http://localhost:$(Get-EnvValue 'DASHBOARD_PORT' '1631')"
+    Write-Host "  Backend:   http://localhost:$(Get-EnvValue 'PORT' '1930')"
+    Write-Host "  Dashboard: http://localhost:$(Get-EnvValue 'DASHBOARD_PORT' '1931')"
   } else {
     Write-Host "Etteum is not running"
   }
@@ -140,7 +141,7 @@ function Invoke-Build {
 
 function Invoke-Port([string]$apiPort, [string]$dashPort) {
   if (-not $apiPort -or -not $dashPort) {
-    Write-Host "Current ports: API=$(Get-EnvValue 'PORT' '1630') Dashboard=$(Get-EnvValue 'DASHBOARD_PORT' '1631')"
+    Write-Host "Current ports: API=$(Get-EnvValue 'PORT' '1930') Dashboard=$(Get-EnvValue 'DASHBOARD_PORT' '1931')"
     Write-Host "Usage: .\etteum.ps1 port <api_port> <dashboard_port>"
     return
   }
@@ -177,6 +178,6 @@ switch ($Command.ToLower()) {
     Write-Host "  logs        Follow server logs (.\etteum.ps1 logs -f)"
     Write-Host "  update      Pull git, install deps, build, restart"
     Write-Host "  build       Rebuild dashboard and restart"
-    Write-Host "  port        Show/change ports (.\etteum.ps1 port 1630 1631)"
+    Write-Host "  port        Show/change ports (.\etteum.ps1 port 1930 1931)"
   }
 }

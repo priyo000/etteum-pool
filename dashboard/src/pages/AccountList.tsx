@@ -4,12 +4,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Search, Trash2, RefreshCw, RotateCcw, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, Search, Trash2, RefreshCw, RotateCcw, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2, XCircle, CheckSquare, Square, MinusSquare, Flame, Power, LayoutGrid, LayoutList, MoreVertical, Clock } from "lucide-react";
 import { formatDateTimeID } from "@/lib/utils";
 import { useTimedMessage } from "@/hooks/useTimedMessage";
 import { useWsEvent } from "@/hooks/useWebSocket";
 import {
   deleteAccount,
+  deleteAllAccountsByProvider,
   fetchAccounts,
   loginAccount,
   loginAccounts,
@@ -20,7 +21,7 @@ import {
   warmupAllAccounts,
 } from "@/lib/api";
 
-type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "codex" | "qoder";
+type Provider = "kiro" | "kiro-pro" | "codebuddy" | "canva" | "codex" | "qoder" | "byok";
 type Status = "active" | "exhausted" | "error" | "pending" | "disabled";
 
 interface CodexQuotaWindow {
@@ -32,6 +33,12 @@ interface CodexQuotaWindow {
 
 interface CodexQuotaMetadata {
   plan_type?: string;
+  subscription?: {
+    status?: string;
+    expires_at?: string | null;
+    renews_at?: string | null;
+    source_keys?: string[];
+  };
   primary?: CodexQuotaWindow;
   secondary?: CodexQuotaWindow;
   rate_limited?: boolean;
@@ -53,6 +60,7 @@ interface Account {
     overage?: { enabled: boolean; capable: boolean; used: number; cap: number; remaining: number } | null;
     inferenceProbe?: string;
   } | null;
+  apiKeyPreview?: string;
 }
 
 const statusVariants: Record<string, "success" | "warning" | "error" | "secondary"> = {
@@ -64,7 +72,10 @@ const statusVariants: Record<string, "success" | "warning" | "error" | "secondar
 };
 
 function labelProvider(provider: string) {
-  return provider === "codebuddy" ? "CodeBuddy" : provider.charAt(0).toUpperCase() + provider.slice(1);
+  if (provider === "codebuddy") return "CodeBuddy";
+  if (provider === "byok") return "BYOK";
+  if (provider === "kiro-pro") return "Kiro Pro";
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
 function formatCredit(value?: number | null) {
@@ -94,36 +105,135 @@ function formatResetIn(seconds: number) {
   return `${minutes}m`;
 }
 
-function CodexQuotaCell({ codex, fallbackRemaining, fallbackLimit }: { codex?: CodexQuotaMetadata; fallbackRemaining?: number; fallbackLimit?: number }) {
-  if (!codex || (!codex.primary && !codex.secondary)) {
-    return <span className="text-xs text-[var(--muted-foreground)]">{formatCredit(fallbackRemaining)}/{formatCredit(fallbackLimit)}</span>;
+function formatResetTime(resetAt?: string | null, resetAfterSeconds?: number) {
+  // Prefer reset_at (absolute time) for accuracy
+  if (resetAt) {
+    const d = new Date(resetAt);
+    if (!isNaN(d.getTime())) {
+      const now = Date.now();
+      const diff = d.getTime() - now;
+      if (diff <= 0) return { countdown: "now", absolute: null };
+      // Show both countdown and absolute time
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const countdown = days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+      // Format date
+      const dateStr = d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+      const timeStr = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+      return { countdown, absolute: `${dateStr}, ${timeStr}` };
+    }
   }
+  if (resetAfterSeconds && resetAfterSeconds > 0) {
+    return { countdown: formatResetIn(resetAfterSeconds), absolute: null };
+  }
+  return null;
+}
+
+function CodexQuotaCell({ codex, fallbackRemaining, fallbackLimit }: { codex?: CodexQuotaMetadata; fallbackRemaining?: number; fallbackLimit?: number }) {
+  const hasData = codex && (codex.primary?.used_percent !== undefined || codex.secondary?.used_percent !== undefined);
+
   const renderBar = (label: string, w?: CodexQuotaWindow) => {
-    if (!w) return null;
-    const used = Math.max(0, Math.min(100, w.used_percent || 0));
+    const used = Math.max(0, Math.min(100, w?.used_percent || 0));
     const remaining = 100 - used;
-    const tone = remaining <= 10 ? "bg-[var(--error)]" : remaining <= 40 ? "bg-[var(--warning)]" : "bg-[var(--success)]";
+    const tone = remaining <= 10 ? "bg-[var(--error)]" : remaining <= 40 ? "bg-[var(--warning)]" : "bg-[var(--primary)]";
+    const resetInfo = formatResetTime(w?.reset_at, w?.reset_after_seconds);
+
     return (
       <div className="space-y-0.5">
         <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
-          <span className="font-medium">{label} ({formatWindow(w.limit_window_seconds)})</span>
-          <span>{remaining.toFixed(1)}% left · reset {formatResetIn(w.reset_after_seconds)}</span>
+          <span className="font-medium">{label}</span>
+          <span>{remaining.toFixed(1)}% left</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-[var(--secondary)] overflow-hidden">
-          <div className={`h-full ${tone}`} style={{ width: `${remaining}%` }} />
+          <div className={`h-full rounded-full transition-all ${tone}`} style={{ width: `${remaining}%` }} />
         </div>
+        {resetInfo ? (
+          <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+            <span className="flex items-center gap-1">
+              <Clock className="w-2.5 h-2.5" />
+              Reset {resetInfo.countdown}
+            </span>
+            {resetInfo.absolute && (
+              <span className="opacity-70">{resetInfo.absolute}</span>
+            )}
+          </div>
+        ) : !hasData ? (
+          <div className="text-[10px] text-[var(--muted-foreground)] opacity-60">Warmup to refresh</div>
+        ) : null}
       </div>
     );
   };
+
+  // Determine labels based on window seconds
+  const primaryLabel = codex?.primary?.limit_window_seconds === 18000 ? "5 Hour"
+    : codex?.primary?.limit_window_seconds ? formatWindow(codex.primary.limit_window_seconds)
+    : "5 Hour";
+  const secondaryLabel = codex?.secondary?.limit_window_seconds === 604800 ? "Weekly"
+    : codex?.secondary?.limit_window_seconds ? formatWindow(codex.secondary.limit_window_seconds)
+    : "Weekly";
+
   return (
-    <div className="space-y-1.5 min-w-[200px]">
-      {codex.plan_type && <div className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">Plan: {codex.plan_type}{codex.rate_limited && <span className="ml-2 text-[var(--error)]">RATE LIMITED</span>}</div>}
-      {renderBar("Session", codex.primary)}
-      {renderBar("Weekly", codex.secondary)}
+    <div className="space-y-2 min-w-[200px]">
+      {(codex?.plan_type || codex?.subscription?.status) && (
+        <div className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
+          {codex.plan_type && <span>Plan: <span className="text-[var(--foreground)]">{codex.plan_type}</span></span>}
+          {codex.subscription?.status && <span className="ml-2">Status: <span className="text-[var(--foreground)]">{codex.subscription.status}</span></span>}
+          {codex.rate_limited && <span className="ml-2 text-[var(--error)]">RATE LIMITED</span>}
+        </div>
+      )}
+      {(codex?.subscription?.expires_at || codex?.subscription?.renews_at) && (
+        <div className="text-[10px] text-[var(--muted-foreground)] space-y-0.5">
+          {codex.subscription?.expires_at && <div>Expires: <span className="text-[var(--foreground)]">{formatDate(codex.subscription.expires_at)}</span></div>}
+          {codex.subscription?.renews_at && <div>Renews: <span className="text-[var(--foreground)]">{formatDate(codex.subscription.renews_at)}</span></div>}
+        </div>
+      )}
+      {renderBar(primaryLabel, codex?.primary)}
+      {renderBar(secondaryLabel, codex?.secondary)}
     </div>
   );
 }
 
+function CreditBar({ remaining, limit, showLabel = true }: { remaining?: number | null; limit?: number | null; showLabel?: boolean }) {
+  const rem = Number(remaining ?? 0);
+  const lim = Number(limit ?? 0);
+
+  // BYOK/unlimited accounts: show "Unlimited" or "Unknown" instead of -1/-1
+  if (lim < 0 || (lim === 0 && rem < 0)) {
+    return (
+      <div className="space-y-1 min-w-[120px]">
+        <div className="text-[10px] text-[var(--muted-foreground)]">
+          {rem < 0 ? "Unlimited" : "Unknown"}
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-[var(--primary)]/30 overflow-hidden">
+          <div className="h-full rounded-full bg-[var(--primary)]" style={{ width: "100%" }} />
+        </div>
+      </div>
+    );
+  }
+
+  const pct = lim > 0 ? Math.max(0, Math.min(100, (rem / lim) * 100)) : 0;
+  const tone = pct <= 10 ? "bg-[var(--error)]" : pct <= 40 ? "bg-[var(--warning)]" : "bg-[var(--primary)]";
+
+  return (
+    <div className="space-y-1 min-w-[120px]">
+      {showLabel && (
+        <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)]">
+          <span>Credits remaining</span>
+          <span>{pct.toFixed(0)}%</span>
+        </div>
+      )}
+      <div className="h-1.5 w-full rounded-full bg-[var(--secondary)] overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="text-[10px] text-[var(--muted-foreground)]">
+        {formatCredit(remaining)} / {formatCredit(limit)} left
+      </div>
+    </div>
+  );
+}
+
+type ViewMode = "list" | "grid";
 type SortKey = "email" | "status" | "enabled" | "credit" | "lastLogin";
 type SortDir = "asc" | "desc";
 
@@ -140,6 +250,9 @@ export default function AccountList() {
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [sortKey, setSortKey] = useState<SortKey>("email");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem("accountViewMode") as ViewMode) || "list");
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -160,8 +273,8 @@ export default function AccountList() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetchAccounts() as { data: Account[] };
-      setAccounts((res.data || []).filter((a) => a.provider === provider));
+      const res = await fetchAccounts({ provider: provider || undefined }) as { data: Account[] };
+      setAccounts(res.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -207,6 +320,20 @@ export default function AccountList() {
     try { await deleteAccount(id); showSuccess(`Deleted #${id}`); await load(); } catch (err) { showError(err); }
   }
 
+  async function handleDeleteAllProvider() {
+    if (!provider || accounts.length === 0) return;
+    const label = labelProvider(provider);
+    if (!confirm(`Delete ALL ${accounts.length} ${label} accounts? This cannot be undone.`)) return;
+    try {
+      const res = await deleteAllAccountsByProvider(provider);
+      setSelectedIds(new Set());
+      showSuccess(`Deleted ${res.deleted} ${label} accounts.`);
+      await load();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
   async function handleToggle(id: number, currentEnabled: boolean) {
     const next = !currentEnabled;
     setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, enabled: next } : a)));
@@ -233,6 +360,108 @@ export default function AccountList() {
       }));
       showError(err);
     }
+  }
+
+  // Selection helpers
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const pageIds = filtered.slice((page - 1) * perPage, page * perPage).map((a) => a.id);
+    const allSelected = pageIds.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        pageIds.forEach((id) => next.delete(id));
+      } else {
+        pageIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  // Bulk actions
+  async function handleBulkRetry() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkLoading(true);
+    try {
+      await loginAccounts(ids);
+      showSuccess(`Queued ${ids.length} accounts for retry.`);
+      clearSelection();
+      await load();
+    } catch (err) { showError(err); }
+    finally { setBulkLoading(false); }
+  }
+
+  async function handleBulkWarmup() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkLoading(true);
+    try {
+      for (const id of ids) {
+        await warmupAccount(id);
+      }
+      showSuccess(`WarmUp queued for ${ids.length} accounts.`);
+      clearSelection();
+      await load();
+    } catch (err) { showError(err); }
+    finally { setBulkLoading(false); }
+  }
+
+  async function handleBulkEnable() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkLoading(true);
+    try {
+      for (const id of ids) {
+        await toggleAccountEnabled(id, true);
+      }
+      showSuccess(`Enabled ${ids.length} accounts.`);
+      clearSelection();
+      await load();
+    } catch (err) { showError(err); }
+    finally { setBulkLoading(false); }
+  }
+
+  async function handleBulkDisable() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkLoading(true);
+    try {
+      for (const id of ids) {
+        await toggleAccountEnabled(id, false);
+      }
+      showSuccess(`Disabled ${ids.length} accounts.`);
+      clearSelection();
+      await load();
+    } catch (err) { showError(err); }
+    finally { setBulkLoading(false); }
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} selected accounts? This cannot be undone.`)) return;
+    setBulkLoading(true);
+    try {
+      for (const id of ids) {
+        await deleteAccount(id);
+      }
+      showSuccess(`Deleted ${ids.length} accounts.`);
+      clearSelection();
+      await load();
+    } catch (err) { showError(err); }
+    finally { setBulkLoading(false); }
   }
 
   const filtered = useMemo(() => {
@@ -302,6 +531,9 @@ export default function AccountList() {
           <Button variant="outline" size="sm" onClick={() => handleToggleAll(false)} disabled={enabledCount === 0}>
             <XCircle className="w-4 h-4 mr-2 text-[var(--error)]" /> Disable All ({enabledCount})
           </Button>
+          <Button variant="outline" size="sm" onClick={handleDeleteAllProvider} disabled={accounts.length === 0}>
+            <Trash2 className="w-4 h-4 mr-2 text-[var(--error)]" /> Delete All ({accounts.length})
+          </Button>
         </div>
       </div>
 
@@ -319,6 +551,23 @@ export default function AccountList() {
           <Input placeholder="Search accounts..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* View toggle */}
+          <div className="flex items-center rounded-md border border-[var(--border)] overflow-hidden mr-1">
+            <button
+              onClick={() => { setViewMode("list"); localStorage.setItem("accountViewMode", "list"); }}
+              className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-[var(--primary)]/10 text-[var(--primary)]" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+              title="List view"
+            >
+              <LayoutList className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => { setViewMode("grid"); localStorage.setItem("accountViewMode", "grid"); }}
+              className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-[var(--primary)]/10 text-[var(--primary)]" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+              title="Grid view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
           {(["all", "active", "exhausted", "error", "pending", "disabled"] as const).map((s) => (
             <button
               key={s}
@@ -335,13 +584,163 @@ export default function AccountList() {
         </div>
       </div>
 
-      {/* Table */}
-      <Card className="border-[var(--border)]">
+      {/* Bulk Action Toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-4 py-2.5">
+          <span className="text-sm font-medium text-[var(--foreground)] mr-1">
+            {selectedIds.size} selected
+          </span>
+          <div className="h-4 w-px bg-[var(--border)]" />
+          <Button variant="outline" size="sm" onClick={handleBulkRetry} disabled={bulkLoading}>
+            <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Retry
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleBulkWarmup} disabled={bulkLoading}>
+            <Flame className="w-3.5 h-3.5 mr-1.5 text-[var(--warning)]" /> Warmup
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleBulkEnable} disabled={bulkLoading}>
+            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-[var(--success)]" /> Enable
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleBulkDisable} disabled={bulkLoading}>
+            <XCircle className="w-3.5 h-3.5 mr-1.5 text-[var(--muted-foreground)]" /> Disable
+          </Button>
+          <div className="h-4 w-px bg-[var(--border)]" />
+          <Button variant="outline" size="sm" onClick={handleBulkDelete} disabled={bulkLoading} className="text-[var(--error)] border-[var(--error)]/30 hover:bg-[var(--error)]/10">
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
+          </Button>
+          <div className="flex-1" />
+          <Button variant="ghost" size="sm" onClick={clearSelection} disabled={bulkLoading}>
+            Clear
+          </Button>
+        </div>
+      )}
+
+      {/* Grid View */}
+      {viewMode === "grid" && (
+        <div>
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.slice((page - 1) * perPage, page * perPage).map((account) => {
+              const isEnabled = account.enabled !== false;
+              const isSelected = selectedIds.has(account.id);
+              return (
+                <div
+                  key={account.id}
+                  className={`rounded-lg border bg-[var(--card)] p-4 space-y-3 transition-colors ${
+                    isSelected ? "border-[var(--primary)] bg-[var(--primary)]/5" : "border-[var(--border)]"
+                  } ${isEnabled ? "" : "opacity-50"}`}
+                >
+                  {/* Top row: checkbox + email + status + actions */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                      <button onClick={() => toggleSelect(account.id)} className="mt-0.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors shrink-0">
+                        {isSelected
+                          ? <CheckSquare className="w-4 h-4 text-[var(--primary)]" />
+                          : <Square className="w-4 h-4" />}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-[var(--foreground)] truncate" title={account.apiKeyPreview || account.email}>
+                          {account.email}
+                          {account.apiKeyPreview && (
+                            <span className="block text-xs font-mono text-[var(--muted-foreground)] truncate mt-0.5" title={account.apiKeyPreview}>
+                              {account.apiKeyPreview.slice(0, 12)}...{account.apiKeyPreview.slice(-6)}
+                            </span>
+                          )}
+                        </p>
+                        {account.errorMessage && (
+                          <p className="text-[10px] text-[var(--error)] mt-0.5 line-clamp-1" title={account.errorMessage}>{account.errorMessage}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge variant={statusVariants[account.status]} className="text-[10px]">{account.status}</Badge>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isEnabled}
+                        onClick={() => handleToggle(account.id, isEnabled)}
+                        title={isEnabled ? "Disable" : "Enable"}
+                        className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full transition-colors ${isEnabled ? "bg-[var(--success)]" : "bg-[var(--secondary)]"}`}
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isEnabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Info row */}
+                  <div className="flex items-center gap-3 text-[10px] text-[var(--muted-foreground)]">
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-[var(--primary)]" />
+                      {labelProvider(account.provider)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {formatDate(account.lastLoginAt || account.lastUsedAt)}
+                    </span>
+                  </div>
+
+                  {/* Credit bar */}
+                  {account.provider === "codex"
+                    ? <CodexQuotaCell codex={account.metadata?.codex_quota} fallbackRemaining={account.quotaRemaining} fallbackLimit={account.quotaLimit} />
+                    : <CreditBar remaining={account.quotaRemaining} limit={account.quotaLimit} />}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 pt-1 border-t border-[var(--border)]">
+                    {(account.provider.startsWith("kiro") || account.provider === "qoder") && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenPanel(account.id)} title="Open Panel">
+                        <ExternalLink className="w-3.5 h-3.5 text-[var(--info)]" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleWarmup(account.id)} title="WarmUp">
+                      <RefreshCw className="w-3.5 h-3.5 text-[var(--warning)]" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleLogin(account.id)} title="Retry login" disabled={account.status !== "pending" && account.status !== "error"}>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </Button>
+                    <div className="flex-1" />
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(account.id)} title="Delete">
+                      <Trash2 className="w-3.5 h-3.5 text-[var(--error)]" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {!loading && filtered.length === 0 && (
+            <div className="p-8 text-center text-sm text-[var(--muted-foreground)]">No accounts found</div>
+          )}
+          {filtered.length > perPage && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-xs text-[var(--muted-foreground)]">
+                {(page - 1) * perPage + 1}–{Math.min(page * perPage, filtered.length)} of {filtered.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Prev</Button>
+                <span className="text-xs text-[var(--muted-foreground)]">{page}/{Math.ceil(filtered.length / perPage)}</span>
+                <Button variant="outline" size="sm" disabled={page >= Math.ceil(filtered.length / perPage)} onClick={() => setPage(page + 1)}>Next</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Table (List View) */}
+      {viewMode === "list" && <Card className="border-[var(--border)]">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[var(--border)]">
+                  <th className="w-10 p-4">
+                    <button onClick={toggleSelectAll} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" title="Select all on page">
+                      {(() => {
+                        const pageIds = filtered.slice((page - 1) * perPage, page * perPage).map((a) => a.id);
+                        const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+                        const someSelected = pageIds.some((id) => selectedIds.has(id));
+                        if (allSelected) return <CheckSquare className="w-4 h-4 text-[var(--primary)]" />;
+                        if (someSelected) return <MinusSquare className="w-4 h-4 text-[var(--primary)]" />;
+                        return <Square className="w-4 h-4" />;
+                      })()}
+                    </button>
+                  </th>
                   <th className="text-left text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide p-4 cursor-pointer select-none hover:text-[var(--foreground)]" onClick={() => handleSort("email")}>
                     <span className="inline-flex items-center">Email<SortIcon column="email" /></span>
                   </th>
@@ -364,9 +763,23 @@ export default function AccountList() {
                 {filtered.slice((page - 1) * perPage, page * perPage).map((account) => {
                   const isEnabled = account.enabled !== false;
                   return (
-                  <tr key={account.id} className={`border-b border-[var(--border)] last:border-0 hover:bg-[var(--secondary)]/50 ${isEnabled ? "" : "opacity-50"}`}>
+                  <tr key={account.id} className={`border-b border-[var(--border)] last:border-0 hover:bg-[var(--secondary)]/50 ${isEnabled ? "" : "opacity-50"} ${selectedIds.has(account.id) ? "bg-[var(--primary)]/5" : ""}`}>
+                    <td className="w-10 p-4">
+                      <button onClick={() => toggleSelect(account.id)} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
+                        {selectedIds.has(account.id)
+                          ? <CheckSquare className="w-4 h-4 text-[var(--primary)]" />
+                          : <Square className="w-4 h-4" />}
+                      </button>
+                    </td>
                     <td className="p-4 text-sm text-[var(--foreground)]">
-                      <div>{account.email}</div>
+                      <div>
+                        {account.email}
+                        {account.apiKeyPreview && (
+                          <div className="text-[10px] font-mono text-[var(--muted-foreground)] truncate mt-0.5" title={account.apiKeyPreview}>
+                            {account.apiKeyPreview.slice(0, 12)}...{account.apiKeyPreview.slice(-6)}
+                          </div>
+                        )}
+                      </div>
                       {account.errorMessage && <div className="text-xs text-[var(--error)] mt-1 line-clamp-1" title={account.errorMessage}>{account.errorMessage}</div>}
                     </td>
                     <td className="p-4"><Badge variant={statusVariants[account.status]}>{account.status}</Badge></td>
@@ -385,14 +798,14 @@ export default function AccountList() {
                     <td className="p-4 text-sm text-[var(--muted-foreground)] hidden sm:table-cell">
                       {account.provider === "codex"
                         ? <CodexQuotaCell codex={account.metadata?.codex_quota} fallbackRemaining={account.quotaRemaining} fallbackLimit={account.quotaLimit} />
-                        : <span className="flex items-center gap-1.5">
-                            {formatCredit(account.quotaRemaining)}/{formatCredit(account.quotaLimit)}
+                        : <div className="flex items-center gap-1.5">
+                            <CreditBar remaining={account.quotaRemaining} limit={account.quotaLimit} />
                             {account.metadata?.overage?.enabled && account.metadata.overage.remaining > 0 && (
                               <Badge variant="success" className="text-[10px] px-1 py-0">
                                 PAYG: {Math.round(account.metadata.overage.used)}
                               </Badge>
                             )}
-                          </span>}
+                          </div>}
                     </td>
                     <td className="p-4 text-xs text-[var(--muted-foreground)] hidden md:table-cell">{formatDate(account.lastLoginAt || account.lastUsedAt)}</td>
                     <td className="p-4">
@@ -417,7 +830,7 @@ export default function AccountList() {
                   );
                 })}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan={6} className="p-8 text-center text-sm text-[var(--muted-foreground)]">No accounts found</td></tr>
+                  <tr><td colSpan={7} className="p-8 text-center text-sm text-[var(--muted-foreground)]">No accounts found</td></tr>
                 )}
               </tbody>
             </table>
@@ -435,7 +848,7 @@ export default function AccountList() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

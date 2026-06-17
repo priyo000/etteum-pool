@@ -1,7 +1,7 @@
 # Etteum Pool installer for Windows
 #
 # One-command install (PowerShell):
-#   irm https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/levanza1358/etteum-pool/main/install.ps1 | iex
 #
 # Or, after cloning:
 #   powershell -ExecutionPolicy Bypass -File install.ps1
@@ -10,7 +10,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$RepoUrl     = if ($env:ETTEUM_REPO) { $env:ETTEUM_REPO } else { "https://github.com/priyo000/etteum-pool.git" }
+$RepoUrl     = if ($env:ETTEUM_REPO) { $env:ETTEUM_REPO } else { "https://github.com/levanza1358/etteum-pool.git" }
 $DefaultDir  = if ($env:ETTEUM_HOME) { $env:ETTEUM_HOME } else { Join-Path $HOME "etteum-pool" }
 
 function Step([string]$msg) { Write-Host "==> " -ForegroundColor Cyan -NoNewline; Write-Host $msg -ForegroundColor White }

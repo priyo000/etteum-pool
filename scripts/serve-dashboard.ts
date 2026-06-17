@@ -10,8 +10,12 @@
  *   DASHBOARD_PORT (default: 1931)
  */
 
+import { fileURLToPath } from "node:url";
+
 const port = Number(process.env.DASHBOARD_PORT) || 1931;
-const distDir = new URL("../dashboard/dist", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1");
+const backendPort = Number(process.env.PORT) || 1930;
+const backendUrl = `http://localhost:${backendPort}`;
+const distDir = fileURLToPath(new URL("../dashboard/dist", import.meta.url));
 const indexFile = `${distDir}/index.html`;
 
 // Check if dashboard is built
@@ -45,6 +49,32 @@ Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
     let pathname = url.pathname;
+
+    // Proxy API, v1, and WebSocket requests to backend
+    if (pathname.startsWith("/v1/") || pathname.startsWith("/api/") || pathname === "/ws") {
+      const target = `${backendUrl}${pathname}${url.search}`;
+      try {
+        const proxyHeaders = new Headers(req.headers);
+        proxyHeaders.set("Host", `localhost:${backendPort}`);
+        const proxyRes = await fetch(target, {
+          method: req.method,
+          headers: proxyHeaders,
+          body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+          // @ts-ignore - duplex needed for streaming
+          duplex: "half",
+        });
+        return new Response(proxyRes.body, {
+          status: proxyRes.status,
+          statusText: proxyRes.statusText,
+          headers: proxyRes.headers,
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: "Backend unavailable" }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Try to serve the exact file
     let filePath = `${distDir}${pathname}`;

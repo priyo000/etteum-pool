@@ -11,15 +11,20 @@
 ## Features
 
 - **Multi-Provider Support** — Kiro, Kiro Pro, CodeBuddy, Codex, Canva, Qoder
-- **Automatic Load Balancing** — Distributes requests across healthy accounts
+- **Automatic Load Balancing** — Round-robin or sequential distribution across healthy accounts
 - **Credit Tracking** — Real-time quota monitoring and exhaustion detection
 - **Auto-Warmup** — Periodic health checks to keep accounts ready
 - **Token Compression** — RTK / DCP / Caveman / Cache Markers / Image Dedupe pipeline ([docs](docs/compression.md))
 - **Dashboard** — Beautiful web UI for monitoring and management
+- **Account Filter** — Bulk check which accounts are missing per provider, with one-click add
+- **Multi-Select Actions** — Select multiple accounts for bulk retry, warmup, enable/disable, delete
+- **Backup & Restore** — Export/import all data (accounts, settings, rules) as JSON
 - **Proxy Pool** — Optional residential proxy support for geo-restricted providers
 - **WebSocket Updates** — Real-time status updates in the dashboard
 - **Filter Rules** — Custom routing rules for different users/models
+- **Model Mappings** — Rewrite incoming model names to available pool models
 - **Usage Analytics** — Track requests, tokens, and costs
+- **Image Studio** — AI image generation via Canva/Flux Pro
 
 ---
 
@@ -29,12 +34,12 @@
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/levanza1358/etteum-pool/main/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/levanza1358/etteum-pool/main/install.ps1 | iex
 ```
 
 The installer will:
@@ -73,7 +78,7 @@ If you prefer manual installation:
 
 ```bash
 # Clone the repository
-git clone https://github.com/priyo000/etteum-pool.git
+git clone https://github.com/levanza1358/etteum-pool.git
 cd etteum-pool
 
 # Install Bun (if not installed)
@@ -345,10 +350,10 @@ Re-run the installer to pull latest changes:
 
 ```bash
 # Linux/macOS
-curl -fsSL https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/levanza1358/etteum-pool/main/install.sh | bash
 
 # Windows
-irm https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/levanza1358/etteum-pool/main/install.ps1 | iex
 ```
 
 Or manually:
@@ -371,8 +376,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/priyo000/etteum-pool/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/priyo000/etteum-pool/discussions)
+- **Issues**: [GitHub Issues](https://github.com/levanza1358/etteum-pool/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/levanza1358/etteum-pool/discussions)
 
 ---
 

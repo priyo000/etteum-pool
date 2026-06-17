@@ -12,6 +12,7 @@
     "setup:win": "powershell -ExecutionPolicy Bypass -File install.ps1"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "cbor-x": "^1.6.4",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.17",

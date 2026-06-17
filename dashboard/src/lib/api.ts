@@ -121,8 +121,17 @@ export async function fetchDashboardStats(hours?: number | null, range?: string)
   return fetchApi(`/api/stats${qs ? `?${qs}` : ""}`);
 }
 
-export async function fetchAccounts() {
-  return fetchApi("/api/accounts");
+export async function fetchAccounts(options?: { provider?: string; limit?: number; offset?: number }) {
+  const params = new URLSearchParams();
+  if (options?.provider) params.set("provider", options.provider);
+  if (options?.limit) params.set("limit", String(options.limit));
+  if (options?.offset) params.set("offset", String(options.offset));
+  const qs = params.toString();
+  return fetchApi(`/api/accounts${qs ? `?${qs}` : ""}`);
+}
+
+export async function fetchAccountsSummary() {
+  return fetchApi<{ summary: Array<{ provider: string; status: string; count: number; totalQuotaRemaining: number; totalQuotaLimit: number }> }>("/api/accounts?summary=true");
 }
 
 export async function fetchProviders() {
@@ -369,6 +378,13 @@ export async function createAccount(account: { provider: string; email: string; 
 
 export async function deleteAccount(id: number) {
   return fetchApi(`/api/accounts/${id}`, { method: "DELETE" });
+}
+
+export async function deleteAllAccountsByProvider(provider: string) {
+  return fetchApi<{ provider: string; deleted: number; success: boolean }>(
+    `/api/accounts/provider/${provider}`,
+    { method: "DELETE" },
+  );
 }
 
 export async function toggleAccountEnabled(id: number, enabled?: boolean) {
@@ -747,6 +763,7 @@ export interface ByokProvider {
   id: number;
   label: string;
   base_url: string;
+  api_key?: string;
   format: "openai" | "anthropic" | "auto";
   models: string[];
   model_prefix: string;
@@ -769,6 +786,20 @@ export async function createByokProvider(data: {
   headers?: Record<string, string>;
 }): Promise<{ success: boolean; id: number; label: string; models: string[] }> {
   return fetchApi("/api/accounts/byok", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createByokBatch(data: {
+  label: string;
+  base_url: string;
+  api_keys: string;
+  format?: "openai" | "anthropic" | "auto";
+  models: string[];
+  headers?: Record<string, string>;
+}): Promise<{ success: boolean; created: number; errors: number; accounts: Array<{ id: number; label: string }>; errorDetails: Array<{ index: number; error: string }>; models: string[] }> {
+  return fetchApi("/api/accounts/byok/batch", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -809,5 +840,43 @@ export async function testByokProvider(
   return fetchApi(`/api/accounts/byok/${id}/test`, {
     method: "POST",
     body: JSON.stringify(model ? { model } : {})
+  });
+}
+
+// --- Backup / Export / Import ---
+
+export async function exportBackup(): Promise<any> {
+  return fetchApi("/api/backup/export");
+}
+
+export async function importBackup(data: any, mode: "merge" | "replace" = "merge"): Promise<any> {
+  return fetchApi(`/api/backup/import?mode=${mode}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Account Filter ---
+
+export async function filterAccounts(emails: string[]): Promise<{
+  totalInput: number;
+  totalMissing: number;
+  providers: Record<string, Array<{ email: string; password: string }>>;
+}> {
+  return fetchApi("/api/accounts/filter", {
+    method: "POST",
+    body: JSON.stringify({ emails }),
+  });
+}
+
+export async function bulkCreateAccounts(accounts: Array<{ provider: string; email: string; password: string }>) {
+  return fetchApi<{
+    total: number;
+    success: number;
+    failed: number;
+    results: Array<{ email: string; success: boolean; error?: string }>;
+  }>("/api/accounts/bulk", {
+    method: "POST",
+    body: JSON.stringify({ accounts }),
   });
 }
