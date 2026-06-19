@@ -14,7 +14,7 @@
  *   bun run scripts/production.ts --skip-build
  */
 
-const root = new URL("..", import.meta.url).pathname;
+const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1");
 const dashboardDir = `${root}/dashboard`;
 const dashboardDist = `${dashboardDir}/dist/index.html`;
 const skipBuild = process.argv.includes("--skip-build");

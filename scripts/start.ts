@@ -1,4 +1,4 @@
-const root = new URL("..", import.meta.url).pathname;
+const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1");
 const port = process.env.PORT || "1930";
 const dashboardPort = process.env.DASHBOARD_PORT || "1931";
 
