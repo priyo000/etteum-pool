@@ -54,14 +54,90 @@ interface GumloopModelDef {
 }
 
 const GUMLOOP_MODELS: GumloopModelDef[] = [
+  // ── Claude Opus (1M context) ──────────────────────────────────────
   {
-    id: "gl-claude-sonnet-4.5",
-    upstream: "claude-sonnet-4-5",
-    context_window: 200000,
+    id: "gl-claude-opus-4.8",
+    upstream: "claude-opus-4-8",
+    context_window: 1_000_000,
+    max_output: 32000,
+    thinking: true,
+    vision: true,
+    creditRate: 0.075 / 1000,
+  },
+  {
+    id: "gl-claude-opus-4.7",
+    upstream: "claude-opus-4-7",
+    context_window: 1_000_000,
+    max_output: 32000,
+    thinking: true,
+    vision: true,
+    creditRate: 0.075 / 1000,
+  },
+  {
+    id: "gl-claude-opus-4.6",
+    upstream: "claude-opus-4-6",
+    context_window: 1_000_000,
+    max_output: 32000,
+    thinking: true,
+    vision: true,
+    creditRate: 0.075 / 1000,
+  },
+  {
+    id: "gl-claude-opus-4.5",
+    upstream: "claude-opus-4-5",
+    context_window: 200_000,
+    max_output: 32000,
+    thinking: true,
+    vision: true,
+    creditRate: 0.075 / 1000,
+  },
+  // ── Claude Sonnet ─────────────────────────────────────────────────
+  {
+    id: "gl-claude-sonnet-4.6",
+    upstream: "claude-sonnet-4-6",
+    context_window: 1_000_000,
     max_output: 64000,
     thinking: true,
     vision: true,
     creditRate: 0.009 / 1000,
+  },
+  {
+    id: "gl-claude-sonnet-4.5",
+    upstream: "claude-sonnet-4-5",
+    context_window: 200_000,
+    max_output: 64000,
+    thinking: true,
+    vision: true,
+    creditRate: 0.009 / 1000,
+  },
+  // ── Claude Haiku ──────────────────────────────────────────────────
+  {
+    id: "gl-claude-haiku-4.5",
+    upstream: "claude-haiku-4-5",
+    context_window: 200_000,
+    max_output: 8192,
+    thinking: false,
+    vision: true,
+    creditRate: 0.001 / 1000,
+  },
+  // ── Gemini ────────────────────────────────────────────────────────
+  {
+    id: "gl-gemini-2.5-pro",
+    upstream: "gemini-2.5-pro",
+    context_window: 1_000_000,
+    max_output: 8192,
+    thinking: true,
+    vision: true,
+    creditRate: 0.007 / 1000,
+  },
+  {
+    id: "gl-gemini-2.5-flash",
+    upstream: "gemini-2.5-flash",
+    context_window: 1_000_000,
+    max_output: 8192,
+    thinking: true,
+    vision: true,
+    creditRate: 0.0005 / 1000,
   },
 ];
 
