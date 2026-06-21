@@ -32,6 +32,7 @@ import { decrypt } from "../../utils/crypto";
 const GUMLOOP_FIREBASE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
 const GUMLOOP_SECRET_URL = `${config.gumloopApiBase}/secret`;
 const GUMLOOP_CHAT_URL = `${config.gumloopChatBase}/api/v1/chat/completions`;
+const GUMLOOP_CREDIT_LIMIT_URL = `${config.gumloopApiBase}/get_subscription_tier_credit_limit`;
 
 interface GumloopTokens {
   uid: string;
@@ -50,11 +51,33 @@ interface GumloopModelDef {
   max_output: number;
   thinking: boolean;
   vision: boolean;
+  /**
+   * Gumloop credit rate PER 1000 TOKENS (not per-interaction).
+   *
+   * Calibrated from real credit-delta measurements against the
+   * get_subscription_tier_credit_limit endpoint (2026-06-20).
+   * See scripts/test-gumloop-credit-rate.ts for methodology.
+   *
+   * Free plan: 5000 credits/month.
+   *
+   * Measured rates (credits per 1k tokens):
+   *   Opus:   ~1.96  (7 data points, 8662 tokens)
+   *   Sonnet: ~2.33  (6 data points, 6444 tokens)
+   *   Haiku:  ~1.44  (5 data points, 4171 tokens)
+   *   Gemini Pro:  ~1.96 (same tier as Opus — Expert AI)
+   *   Gemini Flash: ~1.44 (same tier as Haiku — Standard AI)
+   *
+   * NOTE: Gumloop's credit endpoint has eventual consistency (~5s delay),
+   * so per-request delta is noisy. Token-based estimation is more reliable
+   * for per-request tracking. The credit endpoint is still used in
+   * fetchQuota() for authoritative remaining-credits during warmup.
+   */
   creditRate: number;
 }
 
 const GUMLOOP_MODELS: GumloopModelDef[] = [
   // ── Claude Opus (1M context) ──────────────────────────────────────
+  // creditRate: ~1.96 credits per 1k tokens (calibrated from real data)
   {
     id: "gl-claude-opus-4.8",
     upstream: "claude-opus-4-8",
@@ -62,7 +85,7 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 32000,
     thinking: true,
     vision: true,
-    creditRate: 0.075 / 1000,
+    creditRate: 1.96 / 1000,
   },
   {
     id: "gl-claude-opus-4.7",
@@ -71,7 +94,7 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 32000,
     thinking: true,
     vision: true,
-    creditRate: 0.075 / 1000,
+    creditRate: 1.96 / 1000,
   },
   {
     id: "gl-claude-opus-4.6",
@@ -80,7 +103,7 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 32000,
     thinking: true,
     vision: true,
-    creditRate: 0.075 / 1000,
+    creditRate: 1.96 / 1000,
   },
   {
     id: "gl-claude-opus-4.5",
@@ -89,9 +112,10 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 32000,
     thinking: true,
     vision: true,
-    creditRate: 0.075 / 1000,
+    creditRate: 1.96 / 1000,
   },
   // ── Claude Sonnet ─────────────────────────────────────────────────
+  // creditRate: ~2.33 credits per 1k tokens (calibrated from real data)
   {
     id: "gl-claude-sonnet-4.6",
     upstream: "claude-sonnet-4-6",
@@ -99,7 +123,7 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 64000,
     thinking: true,
     vision: true,
-    creditRate: 0.009 / 1000,
+    creditRate: 2.33 / 1000,
   },
   {
     id: "gl-claude-sonnet-4.5",
@@ -108,9 +132,10 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 64000,
     thinking: true,
     vision: true,
-    creditRate: 0.009 / 1000,
+    creditRate: 2.33 / 1000,
   },
   // ── Claude Haiku ──────────────────────────────────────────────────
+  // creditRate: ~1.44 credits per 1k tokens (calibrated from real data)
   {
     id: "gl-claude-haiku-4.5",
     upstream: "claude-haiku-4-5",
@@ -118,9 +143,10 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 8192,
     thinking: false,
     vision: true,
-    creditRate: 0.001 / 1000,
+    creditRate: 1.44 / 1000,
   },
   // ── Gemini ────────────────────────────────────────────────────────
+  // Gemini Pro: same tier as Opus (Expert AI) → ~1.96 credits/1k tokens
   {
     id: "gl-gemini-2.5-pro",
     upstream: "gemini-2.5-pro",
@@ -128,8 +154,9 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 8192,
     thinking: true,
     vision: true,
-    creditRate: 0.007 / 1000,
+    creditRate: 1.96 / 1000,
   },
+  // Gemini Flash: same tier as Haiku (Standard AI) → ~1.44 credits/1k tokens
   {
     id: "gl-gemini-2.5-flash",
     upstream: "gemini-2.5-flash",
@@ -137,7 +164,7 @@ const GUMLOOP_MODELS: GumloopModelDef[] = [
     max_output: 8192,
     thinking: true,
     vision: true,
-    creditRate: 0.0005 / 1000,
+    creditRate: 1.44 / 1000,
   },
 ];
 
@@ -516,14 +543,39 @@ export class GumloopProvider extends BaseProvider {
 
         const data = (await res.json()) as ChatCompletionResponse;
         const usage = data.usage;
+        const promptTokens = usage?.prompt_tokens;
+        const completionTokens = usage?.completion_tokens;
+        const totalTokens = usage?.total_tokens || (promptTokens ?? 0) + (completionTokens ?? 0);
+
+        // Normalize finish_reason in non-stream response (Gumloop may send
+        // Anthropic-format values like "end_turn" which confuse OpenAI clients).
+        const NORMALIZED_FINISH: Record<string, string> = {
+          end_turn: "stop",
+          stop_sequence: "stop",
+          max_tokens: "length",
+        };
+        if (data.choices) {
+          for (const choice of data.choices) {
+            const fr = choice?.finish_reason;
+            if (fr && fr in NORMALIZED_FINISH) {
+              const normalized = NORMALIZED_FINISH[fr];
+              if (normalized) choice.finish_reason = normalized;
+            }
+          }
+        }
+
+        // Gumloop does NOT return credits_used in the response usage object.
+        // We use token-based estimation (creditRate * totalTokens) calibrated
+        // from real credit-delta measurements (see scripts/test-gumloop-credit-rate.ts).
+        // Return undefined so computeCredits() uses the token-based path.
         return {
           success: true,
           response: data,
-          promptTokens: usage?.prompt_tokens,
-          completionTokens: usage?.completion_tokens,
-          tokensUsed: usage?.total_tokens,
-          creditsUsed: usage?.total_tokens ? usage.total_tokens * this.getProviderCreditRate(request.model) : undefined,
-          creditSource: "estimated",
+          promptTokens,
+          completionTokens,
+          tokensUsed: totalTokens,
+          creditsUsed: undefined,
+          creditSource: "estimated" as const,
         };
       } catch (err) {
         lastError = `Gumloop request error: ${err instanceof Error ? err.message : String(err)}`;
@@ -600,12 +652,37 @@ export class GumloopProvider extends BaseProvider {
           return { success: false, error: `Gumloop stream error ${res.status}: ${errText.slice(0, 300)}` };
         }
 
-        // Success - process the stream
+        // Success — parse + re-emit stream with finish_reason normalization.
+        //
+        // Gumloop upstream sends non-standard finish_reason in stream chunks:
+        //   chunk N-1:  finish_reason: "end_turn"  (Anthropic format)
+        //   chunk N:    finish_reason: "stop"       (OpenAI format)
+        //   data: [DONE]
+        //
+        // "end_turn" is not a valid OpenAI finish_reason. Some clients (agent
+        // frameworks) misinterpret it as "incomplete" and loop/retry. We
+        // normalize: "end_turn" → "stop", and suppress the duplicate trailing
+        // chunk (empty delta + redundant finish_reason) that Gumloop emits.
+        //
+        // We also re-emit each chunk as a clean SSE line, matching the pattern
+        // used by Kiro/CodeBuddy/Qoder providers.
         const upstream = res.body;
         const decoder = new TextDecoder();
         const encoder = new TextEncoder();
         let totalCompletionTokens = 0;
         let promptTokens = 0;
+        let sseBuffer = "";
+        let finishReasonSent: string | null = null;
+        let lastUsage: any = null;
+        let lastChunkId: string | null = null;
+        let lastChunkModel: string | null = null;
+        let lastChunkCreated: number | null = null;
+
+        const NORMALIZED_FINISH: Record<string, string> = {
+          end_turn: "stop",
+          stop_sequence: "stop",
+          max_tokens: "length",
+        };
 
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -614,36 +691,104 @@ export class GumloopProvider extends BaseProvider {
               while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                const text = decoder.decode(value, { stream: true });
-                controller.enqueue(encoder.encode(text));
-                // Extract usage from final chunk (if present)
-                const lines = text.split("\n");
+                sseBuffer += decoder.decode(value, { stream: true });
+
+                // Process complete SSE lines from buffer
+                const lines = sseBuffer.split("\n");
+                sseBuffer = lines.pop() || ""; // keep incomplete last line
+
                 for (const line of lines) {
-                  if (line.startsWith("data: ") && line !== "data: [DONE]") {
-                    try {
-                      const chunk = JSON.parse(line.slice(6));
-                      if (chunk.usage?.completion_tokens) totalCompletionTokens = chunk.usage.completion_tokens;
-                      if (chunk.usage?.prompt_tokens) promptTokens = chunk.usage.prompt_tokens;
-                    } catch {
-                      // partial line, ignore
-                    }
+                  const trimmed = line.trim();
+                  if (!trimmed.startsWith("data:")) continue;
+
+                  const payload = trimmed.startsWith("data: ")
+                    ? trimmed.slice(6)
+                    : trimmed.slice(5);
+
+                  if (payload === "[DONE]") {
+                    // Emit a final [DONE] marker
+                    controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                    // Break out of both the line loop and the read loop
+                    // early — Gumloop sends nothing useful after [DONE].
+                    reader.releaseLock();
+                    controller.close();
+                    return;
                   }
-                }
-                // Early termination: Gumloop sends "data: [DONE]\n\n" as the
-                // final SSE marker. Don't wait for TCP close — break immediately
-                // so the downstream Anthropic transformer gets a clean EOF.
-                if (text.includes("data: [DONE]")) {
-                  break;
+
+                  let chunk: any;
+                  try {
+                    chunk = JSON.parse(payload);
+                  } catch {
+                    continue; // partial JSON, skip
+                  }
+
+                  // Capture usage (Gumloop sends it in the second-to-last chunk)
+                  if (chunk.usage) {
+                    lastUsage = chunk.usage;
+                    if (chunk.usage.completion_tokens) totalCompletionTokens = chunk.usage.completion_tokens;
+                    if (chunk.usage.prompt_tokens) promptTokens = chunk.usage.prompt_tokens;
+                  }
+                  if (chunk.id) lastChunkId = chunk.id;
+                  if (chunk.model) lastChunkModel = chunk.model;
+                  if (chunk.created) lastChunkCreated = chunk.created;
+
+                  const choice = chunk.choices?.[0];
+                  if (!choice) continue;
+
+                  // Normalize finish_reason
+                  let fr = choice.finish_reason;
+                  if (fr && NORMALIZED_FINISH[fr]) {
+                    fr = NORMALIZED_FINISH[fr];
+                  }
+
+                  const delta = choice.delta;
+                  const hasContent = delta && typeof delta.content === "string" && delta.content.length > 0;
+                  const hasReasoning = delta && typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0;
+
+                  // Skip empty delta chunks that have no finish_reason (noise)
+                  if (!fr && !hasContent && !hasReasoning) continue;
+
+                  // If we already sent a finish_reason, suppress further
+                  // finish_reason chunks (Gumloop sends end_turn then stop).
+                  // Only allow a new finish_reason if it's different AND
+                    // carries content (extremely rare).
+                  if (fr && finishReasonSent) {
+                    // Duplicate finish_reason chunk — skip if it's just an
+                    // empty delta with a redundant finish_reason.
+                    if (!hasContent && !hasReasoning) continue;
+                  }
+
+                  if (fr) finishReasonSent = fr;
+
+                  // Re-emit clean SSE chunk
+                  const cleanChunk: any = {
+                    id: chunk.id || lastChunkId || `chatcmpl-gumloop-${Date.now()}`,
+                    object: "chat.completion.chunk",
+                    created: chunk.created || lastChunkCreated || Math.floor(Date.now() / 1000),
+                    model: chunk.model || lastChunkModel || upstreamModel,
+                    choices: [{
+                      index: 0,
+                      delta: delta || {},
+                      ...(fr ? { finish_reason: fr } : {}),
+                    }],
+                  };
+
+                  // Attach usage to the final chunk (the one with finish_reason)
+                  if (fr && lastUsage) {
+                    cleanChunk.usage = lastUsage;
+                  }
+
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(cleanChunk)}\n\n`));
                 }
               }
+              // Stream ended without [DONE] — emit one for client compatibility
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             } catch (err) {
               controller.error(err);
               return;
             } finally {
-              // Release the reader's lock so the underlying connection can be
-              // garbage-collected — prevents fd leaks that keep streams open.
-              reader.releaseLock();
-              controller.close();
+              try { reader.releaseLock(); } catch {}
+              try { controller.close(); } catch {}
             }
           },
         });
@@ -651,18 +796,26 @@ export class GumloopProvider extends BaseProvider {
         // Usage (promptTokens, totalCompletionTokens) is captured inside the
         // async stream reader above. Because ReadableStream.start() is async,
         // these values may still be 0 at this return point for fast responses.
-        // The edge proxy's wrapStreamWithUsageFinalizer() also observes raw
-        // stream chunks via extractUsageFromSsePayload() as a backstop.
-        // We return what we have — the edge proxy will use upstream values if
-        // non-zero, otherwise fall back to estimation.
+        //
+        // IMPORTANT: Return undefined (not 0) when we don't have usage yet.
+        // The edge proxy checks truthiness: 0 is falsy → falls through to
+        // estimateMessagesTokens() which produces wildly inaccurate counts.
+        // undefined also skips the || chain, letting wrapStreamWithUsageFinalizer
+        // extract the real usage from SSE chunks.
+        const hasUsage = promptTokens > 0 || totalCompletionTokens > 0;
         return {
           success: true,
           stream,
-          promptTokens,
-          completionTokens: totalCompletionTokens,
-          tokensUsed: promptTokens + totalCompletionTokens,
-          creditsUsed: (promptTokens + totalCompletionTokens) * this.getProviderCreditRate(request.model),
-          creditSource: "estimated",
+          promptTokens: hasUsage ? promptTokens : undefined,
+          completionTokens: hasUsage ? totalCompletionTokens : undefined,
+          tokensUsed: hasUsage ? promptTokens + totalCompletionTokens : undefined,
+          // Gumloop does NOT return credits_used in the response usage object.
+          // We use token-based estimation (creditRate * totalTokens) calibrated
+          // from real credit-delta measurements (see scripts/test-gumloop-credit-rate.ts).
+          // creditSource="estimated" so computeCredits() falls through to the
+          // token-based path, NOT the hardcoded fallback.
+          creditsUsed: undefined,
+          creditSource: "estimated" as const,
         };
       } catch (err) {
         lastError = `Gumloop stream error: ${err instanceof Error ? err.message : String(err)}`;
@@ -706,16 +859,79 @@ export class GumloopProvider extends BaseProvider {
     return !("error" in r);
   }
 
+  /**
+   * Check remaining Gumloop credits via the subscription tier endpoint.
+   *
+   * Endpoint: GET api.gumloop.com/get_subscription_tier_credit_limit?user_id=<uid>
+   * Auth: Authorization: Bearer <firebase_id_token> + x-auth-key: <uid>
+   *
+   * Returns real-time credit_limit, remaining, and billing metadata.
+   * Free plan: 5000 credits/month, charged PER INTERACTION (not per token):
+   *   Expert AI (Opus, Gemini Pro):    30 credits/request
+   *   Advanced AI (Sonnet):            20 credits/request
+   *   Standard AI (Haiku, Gemini Flash): 2 credits/request
+   * Source: https://docs.gumloop.com/core-concepts/credits
+   */
   async fetchQuota(account: Account): Promise<{ success: boolean; quota?: { limit: number; remaining: number; used: number; resetAt?: Date | string | null }; error?: string }> {
-    // Gumloop free plan: 5000 credits/month, but no API endpoint to check remaining.
-    // Return -1 (unknown) — pool will not mark exhausted based on this.
     const tokens = this.getTokens(account);
-    if (!tokens) {
+    if (!tokens?.uid || !tokens.refresh_token) {
       return { success: false, error: "No tokens" };
     }
-    return {
-      success: true,
-      quota: { limit: -1, remaining: -1, used: -1, resetAt: null },
-    };
+
+    // Get fresh Firebase id_token (needed for credit endpoint auth)
+    const { idToken, error } = await this.getValidIdToken(tokens);
+    if (error) {
+      return { success: false, error: `Credit check auth failed: ${error}` };
+    }
+
+    // Persist the refreshed id_token back to DB (so chat completion can reuse it)
+    await this.persistTokens(account.id, tokens);
+
+    try {
+      const res = await this.fetchWithTimeout(
+        `${GUMLOOP_CREDIT_LIMIT_URL}?user_id=${encodeURIComponent(tokens.uid)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "x-auth-key": tokens.uid,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        console.warn(`[gumloop] credit_limit endpoint returned ${res.status}: ${body.slice(0, 200)}`);
+        return { success: false, error: `Credit limit check failed: ${res.status}` };
+      }
+
+      const data = await res.json() as {
+        credit_limit?: number;
+        remaining?: number;
+        is_past_due?: boolean;
+        renewal_date?: string | null;
+        period_start_date?: string | null;
+      };
+
+      const limit = Number(data.credit_limit ?? 5000);
+      const remaining = Number(data.remaining ?? 0);
+      const used = Math.max(0, limit - remaining);
+
+      // Parse renewal_date if available, otherwise approximate end of month
+      let resetAt: Date | null = null;
+      if (data.renewal_date) {
+        resetAt = new Date(data.renewal_date);
+      } else {
+        const now = new Date();
+        resetAt = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      }
+
+      return {
+        success: true,
+        quota: { limit, remaining, used, resetAt },
+      };
+    } catch (err) {
+      return { success: false, error: `Credit check error: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
 }

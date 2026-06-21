@@ -141,6 +141,7 @@ function isNativeProviderId(model: string): boolean {
   if (model.startsWith("cb-")) return true;          // CodeBuddy
   if (model.startsWith("ym-")) return true;          // YouMind
   if (model.startsWith("kiro:")) return true;        // Kiro Pro variant
+  if (model.startsWith("gl-")) return true;          // Gumloop
   return false;
 }
 

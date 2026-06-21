@@ -317,12 +317,21 @@ function wrapStreamWithUsageFinalizer(
     const finalPromptTokens = promptTokens || context.fallbackPromptTokens;
     const finalCompletionTokens = completionTokens || estimateTokensFromText(streamedContent) || context.fallbackCompletionTokens;
     const finalTotalTokens = totalTokens || finalPromptTokens + finalCompletionTokens || context.fallbackTotalTokens;
+    // Credit calculation priority:
+    //   1. If upstream returned credits_used in SSE usage → use that (upstreamCredits)
+    //   2. If we have real token counts from SSE usage → use token-based estimation
+    //      (finalTotalTokens * creditRate). This is more accurate than the fallback
+    //      credits which were computed from pre-stream estimation.
+    //   3. Only fall back to context.fallbackCreditsUsed if we have NO token data
+    //      at all (finalTotalTokens === 0).
+    const hasUpstreamCredits = upstreamCredits > 0;
+    const hasRealTokens = finalTotalTokens > 0;
     const { creditsUsed, creditSource } = computeCredits(
       context.provider,
       context.model,
       finalTotalTokens,
-      upstreamCredits || context.fallbackCreditsUsed,
-      upstreamCredits > 0 ? "upstream" : context.fallbackCreditSource
+      hasUpstreamCredits ? upstreamCredits : (hasRealTokens ? undefined : context.fallbackCreditsUsed),
+      hasUpstreamCredits ? "upstream" : (hasRealTokens ? "estimated" : context.fallbackCreditSource)
     );
     const durationMs = Math.max(0, Date.now() - context.startedAt);
 
