@@ -387,43 +387,73 @@ export class GumloopProvider extends BaseProvider {
     const body = this.buildBody(request, upstreamModel);
     body.stream = false;
 
-    try {
-      const res = await this.fetchWithTimeout(GUMLOOP_CHAT_URL, {
-        method: "POST",
-        headers: this.buildHeaders(apiKey!, tokens.uid),
-        body: JSON.stringify(body),
-      });
+    // Retry logic for transient failures (502, 503, 504, network errors)
+    const maxRetries = 3;
+    let lastError: string = "";
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await this.fetchWithTimeout(GUMLOOP_CHAT_URL, {
+          method: "POST",
+          headers: this.buildHeaders(apiKey!, tokens.uid),
+          body: JSON.stringify(body),
+        });
 
-      if (res.status === 401 || res.status === 403) {
-        // Key may have been revoked — clear it so next request re-registers
-        if (tokens.api_key) {
-          tokens.api_key = undefined;
-          await this.persistTokens(account.id, tokens);
+        // Don't retry auth errors
+        if (res.status === 401 || res.status === 403) {
+          if (tokens.api_key) {
+            tokens.api_key = undefined;
+            await this.persistTokens(account.id, tokens);
+          }
+          return { success: false, error: `Gumloop auth error: ${res.status}`, tokens };
         }
-        return { success: false, error: `Gumloop auth error: ${res.status}`, tokens };
-      }
-      if (res.status === 429) {
-        return { success: false, error: "Gumloop rate limited", rateLimited: true };
-      }
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        return { success: false, error: `Gumloop error ${res.status}: ${errText.slice(0, 300)}` };
-      }
+        
+        // Don't retry rate limits
+        if (res.status === 429) {
+          return { success: false, error: "Gumloop rate limited", rateLimited: true };
+        }
+        
+        // Retry on transient server errors
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          lastError = `Gumloop error ${res.status}`;
+          if (attempt < maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+            console.warn(`[gumloop] Chat ${res.status}, retry ${attempt}/${maxRetries} in ${delay}ms`);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+        }
+        
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          return { success: false, error: `Gumloop error ${res.status}: ${errText.slice(0, 300)}` };
+        }
 
-      const data = (await res.json()) as ChatCompletionResponse;
-      const usage = data.usage;
-      return {
-        success: true,
-        response: data,
-        promptTokens: usage?.prompt_tokens,
-        completionTokens: usage?.completion_tokens,
-        tokensUsed: usage?.total_tokens,
-        creditsUsed: usage?.total_tokens ? usage.total_tokens * this.getProviderCreditRate(request.model) : undefined,
-        creditSource: "estimated",
-      };
-    } catch (err) {
-      return { success: false, error: `Gumloop request error: ${err instanceof Error ? err.message : String(err)}` };
+        const data = (await res.json()) as ChatCompletionResponse;
+        const usage = data.usage;
+        return {
+          success: true,
+          response: data,
+          promptTokens: usage?.prompt_tokens,
+          completionTokens: usage?.completion_tokens,
+          tokensUsed: usage?.total_tokens,
+          creditsUsed: usage?.total_tokens ? usage.total_tokens * this.getProviderCreditRate(request.model) : undefined,
+          creditSource: "estimated",
+        };
+      } catch (err) {
+        lastError = `Gumloop request error: ${err instanceof Error ? err.message : String(err)}`;
+        
+        // Retry on network errors
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          console.warn(`[gumloop] Chat network error, retry ${attempt}/${maxRetries} in ${delay}ms: ${err instanceof Error ? err.message : String(err)}`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+      }
     }
+    
+    return { success: false, error: lastError || "Gumloop chat failed after retries" };
   }
 
   async chatCompletionStream(
@@ -443,83 +473,114 @@ export class GumloopProvider extends BaseProvider {
     const body = this.buildBody(request, upstreamModel);
     body.stream = true;
 
-    try {
-      const res = await this.fetchWithTimeout(GUMLOOP_CHAT_URL, {
-        method: "POST",
-        headers: this.buildHeaders(apiKey!, tokens.uid),
-        body: JSON.stringify(body),
-      });
+    // Retry logic for transient failures (502, 503, 504, network errors)
+    const maxRetries = 3;
+    let lastError: string = "";
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await this.fetchWithTimeout(GUMLOOP_CHAT_URL, {
+          method: "POST",
+          headers: this.buildHeaders(apiKey!, tokens.uid),
+          body: JSON.stringify(body),
+        });
 
-      if (res.status === 401 || res.status === 403) {
-        if (tokens.api_key) {
-          tokens.api_key = undefined;
-          await this.persistTokens(account.id, tokens);
+        // Don't retry auth errors
+        if (res.status === 401 || res.status === 403) {
+          if (tokens.api_key) {
+            tokens.api_key = undefined;
+            await this.persistTokens(account.id, tokens);
+          }
+          return { success: false, error: `Gumloop auth error: ${res.status}`, tokens };
         }
-        return { success: false, error: `Gumloop auth error: ${res.status}`, tokens };
-      }
-      if (res.status === 429) {
-        return { success: false, error: "Gumloop rate limited", rateLimited: true };
-      }
-      if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => "");
-        return { success: false, error: `Gumloop stream error ${res.status}: ${errText.slice(0, 300)}` };
-      }
+        
+        // Don't retry rate limits
+        if (res.status === 429) {
+          return { success: false, error: "Gumloop rate limited", rateLimited: true };
+        }
+        
+        // Retry on transient server errors
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          lastError = `Gumloop stream error ${res.status}`;
+          if (attempt < maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s max
+            console.warn(`[gumloop] Stream ${res.status}, retry ${attempt}/${maxRetries} in ${delay}ms`);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+        }
+        
+        if (!res.ok || !res.body) {
+          const errText = await res.text().catch(() => "");
+          return { success: false, error: `Gumloop stream error ${res.status}: ${errText.slice(0, 300)}` };
+        }
 
-      // Gumloop returns standard OpenAI SSE format (data: {...chat.completion.chunk...} + data: [DONE])
-      // Pass-through verbatim — edge proxy will translate to Anthropic if client requested /v1/messages
-      const upstream = res.body;
-      const decoder = new TextDecoder();
-      const encoder = new TextEncoder();
-      let totalCompletionTokens = 0;
-      let promptTokens = 0;
+        // Success - process the stream
+        const upstream = res.body;
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+        let totalCompletionTokens = 0;
+        let promptTokens = 0;
 
-      const stream = new ReadableStream<Uint8Array>({
-        async start(controller) {
-          const reader = upstream.getReader();
-          const buffer: string[] = [];
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              const text = decoder.decode(value, { stream: true });
-              buffer.push(text);
-              controller.enqueue(encoder.encode(text));
-              // Extract usage from final chunk (if present)
-              const lines = text.split("\n");
-              for (const line of lines) {
-                if (line.startsWith("data: ") && line !== "data: [DONE]") {
-                  try {
-                    const chunk = JSON.parse(line.slice(6));
-                    if (chunk.usage?.completion_tokens) totalCompletionTokens = chunk.usage.completion_tokens;
-                    if (chunk.usage?.prompt_tokens) promptTokens = chunk.usage.prompt_tokens;
-                  } catch {
-                    // partial line, ignore
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const reader = upstream.getReader();
+            const buffer: string[] = [];
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const text = decoder.decode(value, { stream: true });
+                buffer.push(text);
+                controller.enqueue(encoder.encode(text));
+                // Extract usage from final chunk (if present)
+                const lines = text.split("\n");
+                for (const line of lines) {
+                  if (line.startsWith("data: ") && line !== "data: [DONE]") {
+                    try {
+                      const chunk = JSON.parse(line.slice(6));
+                      if (chunk.usage?.completion_tokens) totalCompletionTokens = chunk.usage.completion_tokens;
+                      if (chunk.usage?.prompt_tokens) promptTokens = chunk.usage.prompt_tokens;
+                    } catch {
+                      // partial line, ignore
+                    }
                   }
                 }
               }
+            } catch (err) {
+              controller.error(err);
+              return;
+            } finally {
+              controller.close();
             }
-          } catch (err) {
-            controller.error(err);
-            return;
-          } finally {
-            controller.close();
-          }
-          void buffer;
-        },
-      });
+            void buffer;
+          },
+        });
 
-      return {
-        success: true,
-        stream,
-        promptTokens,
-        completionTokens: totalCompletionTokens,
-        tokensUsed: promptTokens + totalCompletionTokens,
-        creditsUsed: (promptTokens + totalCompletionTokens) * this.getProviderCreditRate(request.model),
-        creditSource: "estimated",
-      };
-    } catch (err) {
-      return { success: false, error: `Gumloop stream error: ${err instanceof Error ? err.message : String(err)}` };
+        return {
+          success: true,
+          stream,
+          promptTokens,
+          completionTokens: totalCompletionTokens,
+          tokensUsed: promptTokens + totalCompletionTokens,
+          creditsUsed: (promptTokens + totalCompletionTokens) * this.getProviderCreditRate(request.model),
+          creditSource: "estimated",
+        };
+      } catch (err) {
+        lastError = `Gumloop stream error: ${err instanceof Error ? err.message : String(err)}`;
+        
+        // Retry on network errors
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          console.warn(`[gumloop] Stream network error, retry ${attempt}/${maxRetries} in ${delay}ms: ${err instanceof Error ? err.message : String(err)}`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+      }
     }
+    
+    // All retries exhausted
+    return { success: false, error: lastError || "Gumloop stream failed after retries" };
   }
 
   // ── Auth & quota ────────────────────────────────────────────────────
