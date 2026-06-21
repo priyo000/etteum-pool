@@ -77,6 +77,14 @@ export function isTransientError(error?: string): boolean {
     normalized.includes("(502)") ||
     normalized.includes("(503)") ||
     normalized.includes("(504)") ||
+    normalized.includes("error 500") ||
+    normalized.includes("error 502") ||
+    normalized.includes("error 503") ||
+    normalized.includes("error 504") ||
+    normalized.includes("status 500") ||
+    normalized.includes("status 502") ||
+    normalized.includes("status 503") ||
+    normalized.includes("status 504") ||
     normalized.includes("internal server error") ||
     normalized.includes("bad gateway") ||
     normalized.includes("service unavailable") ||
