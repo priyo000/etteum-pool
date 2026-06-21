@@ -356,22 +356,25 @@ export class GumloopProvider extends BaseProvider {
   }
 
   /**
-   * Gumloop does NOT support OpenAI function/tool calling.
-   * Any request containing `role: "tool"` messages, `tool_calls` on assistant
-   * messages, or explicit `tool_choice` → 400 "provider_error: Request could
-   * not be processed by the provider."
+   * Gumloop tool calling support (verified 2026-06-21):
    *
-   * Verified by comprehensive probe (2026-06-21):
-   *   - tools param (definitions only) → OK (ignored by upstream)
-   *   - tool_choice: "auto" → 400 REJECTED
-   *   - role: "tool" message → 400 REJECTED
-   *   - assistant.tool_calls → 400 REJECTED
-   *   - tool result as user/assistant text → OK
+   *   ✅ `tools` param (definitions)           → OK — model returns tool_calls
+   *   ✅ Initial tool call (no history)         → OK — finish_reason: "tool_calls"
+   *   ❌ `tool_choice` (any value)              → 400 REJECTED
+   *   ❌ `role: "tool"` in message history      → 400 REJECTED
+   *   ❌ `assistant.tool_calls` in history      → 400 REJECTED
    *
-   * This method transforms tool-related messages into plain text so the
-   * conversation history is preserved without triggering the 400.
+   * Strategy: "first-turn tool calling"
+   *   - Keep `tools` definitions so the model CAN invoke tools on the current turn.
+   *   - Convert any PREVIOUS tool_calls / tool results in history to plain text,
+   *     so the conversation context is preserved without triggering 400.
+   *   - Never send `tool_choice`.
+   *
+   * This means: the agent can call tools, execute them, and on the next turn
+   * the tool result is fed back as text context. The model sees the tool output
+   * and can continue reasoning or call another tool.
    */
-  private stripToolCalls(messages: ChatCompletionRequest["messages"]): ChatCompletionRequest["messages"] {
+  private transformToolHistory(messages: ChatCompletionRequest["messages"]): ChatCompletionRequest["messages"] {
     const result: ChatCompletionRequest["messages"] = [];
     for (const msg of messages) {
       // ── Tool result message → convert to user message ──
@@ -412,8 +415,9 @@ export class GumloopProvider extends BaseProvider {
   }
 
   private buildBody(request: ChatCompletionRequest, upstreamModel: string): Record<string, unknown> {
-    // Strip tool calling artifacts — Gumloop rejects them with 400
-    const messages = this.stripToolCalls(request.messages);
+    // Transform tool history to text — Gumloop rejects tool_calls/role:tool in
+    // message history, but DOES support tools param for the current turn.
+    const messages = this.transformToolHistory(request.messages);
 
     const body: Record<string, unknown> = {
       model: upstreamModel,
@@ -424,9 +428,13 @@ export class GumloopProvider extends BaseProvider {
     if (request.top_p !== undefined) body.top_p = request.top_p;
     if (request.frequency_penalty !== undefined) body.frequency_penalty = request.frequency_penalty;
     if (request.presence_penalty !== undefined) body.presence_penalty = request.presence_penalty;
-    // NOTE: tools & tool_choice intentionally omitted — Gumloop does not support
-    // function calling. Sending them (even as definitions) risks upstream rejection
-    // depending on the model, and tool_choice ALWAYS triggers 400.
+    // Keep tools definitions — model can invoke tools on the current turn.
+    // The transformToolHistory() above ensures no tool_calls/role:tool in history.
+    if (request.tools) body.tools = request.tools;
+    // NEVER send tool_choice — Gumloop rejects it with 400.
+    // Forward reasoning params — Gumloop passes reasoning_content back in response.
+    if (request.reasoning_effort) body.reasoning_effort = request.reasoning_effort;
+    if (request.thinking) body.thinking = request.thinking;
     return body;
   }
 
