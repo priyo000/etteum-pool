@@ -113,10 +113,87 @@ export function anthropicToOpenAI(body: AnthropicMessagesRequest): ChatCompletio
 
   for (const message of body.messages || []) {
     if (message.role !== "user" && message.role !== "assistant") continue;
-    messages.push({
-      role: message.role,
-      content: anthropicContentToOpenAI(message.content),
-    });
+
+    // ── String content: pass through directly ──
+    if (typeof message.content === "string") {
+      messages.push({ role: message.role, content: message.content });
+      continue;
+    }
+
+    if (!Array.isArray(message.content)) continue;
+    const blocks = message.content as AnthropicContentBlock[];
+
+    // ── User messages: split text blocks from tool_result blocks ──
+    // OpenAI expects tool_result as separate {role:"tool", tool_call_id, content} messages.
+    // Anthropic bundles them inside user messages as content blocks.
+    if (message.role === "user") {
+      const textParts: string[] = [];
+      for (const block of blocks) {
+        if (block.type === "tool_result") {
+          // Flush any accumulated text before emitting tool message
+          if (textParts.length > 0) {
+            messages.push({ role: "user", content: textParts.join("\n") });
+            textParts.length = 0;
+          }
+          const toolResultContent = block.content;
+          const text = typeof toolResultContent === "string"
+            ? toolResultContent
+            : Array.isArray(toolResultContent)
+              ? toolResultContent.map((b: any) => b?.type === "text" ? b.text || "" : "").filter(Boolean).join("\n")
+              : String(toolResultContent ?? "");
+          messages.push({
+            role: "tool",
+            tool_call_id: block.tool_use_id as string,
+            content: text,
+          });
+        } else if (block.type === "text" && typeof block.text === "string") {
+          textParts.push(block.text);
+        } else if (block.type === "image") {
+          // Pass image blocks through as OpenAI image_url content
+          textParts.push("[image]");
+        }
+      }
+      // Flush remaining text
+      if (textParts.length > 0) {
+        messages.push({ role: "user", content: textParts.join("\n") });
+      }
+      continue;
+    }
+
+    // ── Assistant messages: split text from tool_use → tool_calls ──
+    if (message.role === "assistant") {
+      const textParts: string[] = [];
+      const toolCalls: any[] = [];
+      for (const block of blocks) {
+        if (block.type === "tool_use") {
+          let input = (block as any).input || {};
+          if (typeof input !== "string") {
+            try { input = JSON.stringify(input); } catch { input = "{}"; }
+          }
+          toolCalls.push({
+            id: (block as any).id || `toolu_${crypto.randomUUID().replace(/-/g, "")}`,
+            type: "function",
+            function: {
+              name: (block as any).name || "unknown",
+              arguments: input,
+            },
+          });
+        } else if (block.type === "text" && typeof block.text === "string") {
+          textParts.push(block.text);
+        } else if (block.type === "thinking") {
+          // Skip thinking blocks — not part of OpenAI format
+        }
+      }
+      const msg: any = {
+        role: "assistant",
+        content: textParts.length > 0 ? textParts.join("\n") : "",
+      };
+      if (toolCalls.length > 0) {
+        msg.tool_calls = toolCalls;
+      }
+      messages.push(msg);
+      continue;
+    }
   }
 
   const tools = anthropicToolsToOpenAI(body.tools);
