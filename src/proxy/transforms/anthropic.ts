@@ -373,7 +373,8 @@ export function openAIStreamToAnthropic(stream: ReadableStream<Uint8Array>, requ
           }
         }, 10_000);
 
-        while (true) {
+        let isDone = false;
+        while (!isDone) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
@@ -383,7 +384,14 @@ export function openAIStreamToAnthropic(stream: ReadableStream<Uint8Array>, requ
           for (const part of parts) {
             const payload = dataPayload(part);
             if (!payload) continue;
-            if (payload === "[DONE]") continue;
+            if (payload === "[DONE]") {
+              // Stream terminator — break immediately so the finally block
+              // can emit message_stop and close the stream. Without this,
+              // the loop waits for reader.read() which may never return
+              // done=true if the upstream keeps the connection alive.
+              isDone = true;
+              break;
+            }
             try {
               const chunk = JSON.parse(payload);
               if (chunk?.error) {

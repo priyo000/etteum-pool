@@ -610,13 +610,11 @@ export class GumloopProvider extends BaseProvider {
         const stream = new ReadableStream<Uint8Array>({
           async start(controller) {
             const reader = upstream.getReader();
-            const buffer: string[] = [];
             try {
               while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 const text = decoder.decode(value, { stream: true });
-                buffer.push(text);
                 controller.enqueue(encoder.encode(text));
                 // Extract usage from final chunk (if present)
                 const lines = text.split("\n");
@@ -631,14 +629,22 @@ export class GumloopProvider extends BaseProvider {
                     }
                   }
                 }
+                // Early termination: Gumloop sends "data: [DONE]\n\n" as the
+                // final SSE marker. Don't wait for TCP close — break immediately
+                // so the downstream Anthropic transformer gets a clean EOF.
+                if (text.includes("data: [DONE]")) {
+                  break;
+                }
               }
             } catch (err) {
               controller.error(err);
               return;
             } finally {
+              // Release the reader's lock so the underlying connection can be
+              // garbage-collected — prevents fd leaks that keep streams open.
+              reader.releaseLock();
               controller.close();
             }
-            void buffer;
           },
         });
 
