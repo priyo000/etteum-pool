@@ -355,18 +355,78 @@ export class GumloopProvider extends BaseProvider {
     };
   }
 
+  /**
+   * Gumloop does NOT support OpenAI function/tool calling.
+   * Any request containing `role: "tool"` messages, `tool_calls` on assistant
+   * messages, or explicit `tool_choice` → 400 "provider_error: Request could
+   * not be processed by the provider."
+   *
+   * Verified by comprehensive probe (2026-06-21):
+   *   - tools param (definitions only) → OK (ignored by upstream)
+   *   - tool_choice: "auto" → 400 REJECTED
+   *   - role: "tool" message → 400 REJECTED
+   *   - assistant.tool_calls → 400 REJECTED
+   *   - tool result as user/assistant text → OK
+   *
+   * This method transforms tool-related messages into plain text so the
+   * conversation history is preserved without triggering the 400.
+   */
+  private stripToolCalls(messages: ChatCompletionRequest["messages"]): ChatCompletionRequest["messages"] {
+    const result: ChatCompletionRequest["messages"] = [];
+    for (const msg of messages) {
+      // ── Tool result message → convert to user message ──
+      if (msg.role === "tool" as any) {
+        const toolCallId = (msg as any).tool_call_id || "unknown";
+        const content = typeof msg.content === "string"
+          ? msg.content
+          : JSON.stringify(msg.content || "");
+        result.push({
+          role: "user",
+          content: `[Tool Result${toolCallId !== "unknown" ? ` (${toolCallId})` : ""}]\n${content}`,
+        });
+        continue;
+      }
+
+      // ── Assistant message with tool_calls → convert to text ──
+      if (msg.role === "assistant" && (msg as any).tool_calls) {
+        const toolCalls = (msg as any).tool_calls as any[];
+        const textContent = typeof msg.content === "string" ? msg.content : "";
+        const toolText = toolCalls
+          .map((tc: any) => {
+            const name = tc?.function?.name || "unknown";
+            const args = tc?.function?.arguments || "{}";
+            return `[Tool Call: ${name}]\nArguments: ${args}`;
+          })
+          .join("\n\n");
+        result.push({
+          role: "assistant",
+          content: [textContent, toolText].filter(Boolean).join("\n\n") || "[Tool call initiated]",
+        });
+        continue;
+      }
+
+      // ── All other messages: pass through ──
+      result.push(msg);
+    }
+    return result;
+  }
+
   private buildBody(request: ChatCompletionRequest, upstreamModel: string): Record<string, unknown> {
+    // Strip tool calling artifacts — Gumloop rejects them with 400
+    const messages = this.stripToolCalls(request.messages);
+
     const body: Record<string, unknown> = {
       model: upstreamModel,
-      messages: request.messages,
+      messages,
     };
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.max_tokens !== undefined) body.max_tokens = request.max_tokens;
     if (request.top_p !== undefined) body.top_p = request.top_p;
     if (request.frequency_penalty !== undefined) body.frequency_penalty = request.frequency_penalty;
     if (request.presence_penalty !== undefined) body.presence_penalty = request.presence_penalty;
-    if (request.tools) body.tools = request.tools;
-    if (request.tool_choice !== undefined) body.tool_choice = request.tool_choice;
+    // NOTE: tools & tool_choice intentionally omitted — Gumloop does not support
+    // function calling. Sending them (even as definitions) risks upstream rejection
+    // depending on the model, and tool_choice ALWAYS triggers 400.
     return body;
   }
 
@@ -419,6 +479,23 @@ export class GumloopProvider extends BaseProvider {
           if (attempt < maxRetries) {
             const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
             console.warn(`[gumloop] Chat ${res.status}, retry ${attempt}/${maxRetries} in ${delay}ms`);
+            
+            // Debug: dump request info on first failure
+            if (attempt === 1) {
+              const bodySize = JSON.stringify(body).length;
+              const msgCount = (request.messages || []).length;
+              const msgTypes = (request.messages || []).map((m: any) => {
+                const contentLen = typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length;
+                return `${m.role}(${contentLen})`;
+              }).join(', ');
+              console.warn(`[gumloop] DEBUG: model=${request.model} bodySize=${bodySize}B msgs=${msgCount} [${msgTypes}] stream=${body.stream}`);
+              
+              // Dump first message structure for debugging
+              if (request.messages && request.messages[0]) {
+                console.warn(`[gumloop] First msg:`, JSON.stringify(request.messages[0]).slice(0, 200));
+              }
+            }
+            
             await new Promise(r => setTimeout(r, delay));
             continue;
           }
