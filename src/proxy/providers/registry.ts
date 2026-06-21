@@ -40,8 +40,10 @@ const gumloop = new GumloopProvider();
 // Priority order. canva/qoder/codex/kiro-pro have unique prefixes; codex
 // is listed before codebuddy so the literal "gpt-5-codex" resolves to codex
 // while codebuddy keeps its own "gpt-5*"/"gpt-5.x-codex" models. byok checks
-// dynamic prefixes from DB accounts. kiro is the fallback.
-const PROVIDER_ORDER = [canva, qoder, codex, kiroPro, byok, codebuddyChina, codebuddy, kiro] as const;
+// dynamic prefixes from DB accounts. gumloop/youmind/gitlabDuo have their own
+// prefixes (gl-/ym-/duo:) and must be listed before kiro (fallback). kiro is
+// the fallback.
+const PROVIDER_ORDER = [canva, qoder, codex, gumloop, youmind, gitlabDuo, kiroPro, byok, codebuddyChina, codebuddy, kiro] as const;
 
 export const providers = {
   kiro,
