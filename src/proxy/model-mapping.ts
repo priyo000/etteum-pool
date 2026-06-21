@@ -35,6 +35,8 @@ export const DEFAULT_MODEL_MAPPINGS: Array<{
   { sourcePattern: "haiku", matchType: "contains", targetModel: "", enabled: false, priority: 0, label: "Claude Code · Haiku (small/fast)" },
   { sourcePattern: "sonnet", matchType: "contains", targetModel: "", enabled: false, priority: 1, label: "Claude Code · Sonnet (main)" },
   { sourcePattern: "opus", matchType: "contains", targetModel: "", enabled: false, priority: 2, label: "Claude Code · Opus (heavy)" },
+  { sourcePattern: "fable", matchType: "contains", targetModel: "", enabled: false, priority: 3, label: "the assistant · Fable (mythos-class, safeguarded)" },
+  { sourcePattern: "mythos", matchType: "contains", targetModel: "", enabled: false, priority: 4, label: "the assistant · Mythos (mythos-class, unrestricted)" }
 ];
 
 /**

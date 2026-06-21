@@ -8,6 +8,7 @@ import { QoderProvider } from "./qoder";
 import { ByokProvider } from "./byok";
 import { GitlabDuoProvider } from "./gitlab-duo";
 import { YouMindProvider } from "./youmind";
+import { GumloopProvider } from "./gumloop";
 
 /**
  * Single source of truth for the provider set.
@@ -34,6 +35,7 @@ const qoder = new QoderProvider();
 const byok = new ByokProvider();
 const gitlabDuo = new GitlabDuoProvider();
 const youmind = new YouMindProvider();
+const gumloop = new GumloopProvider();
 
 // Priority order. canva/qoder/codex/kiro-pro/youmind have unique prefixes; codex
 // is listed before codebuddy so the literal "gpt-5-codex" resolves to codex
@@ -43,7 +45,7 @@ const youmind = new YouMindProvider();
 // overlap with any other provider, so position is not load-bearing. youmind
 // owns the `ym-*` prefix exclusively — also position-independent, but slotted
 // alongside the other prefix-based providers for readability.
-const PROVIDER_ORDER = [gitlabDuo, canva, qoder, codex, kiroPro, youmind, byok, codebuddyChina, codebuddy, kiro] as const;
+const PROVIDER_ORDER = [gitlabDuo, canva, qoder, codex, kiroPro, youmind, byok, codebuddyChina, codebuddy, gumloop, kiro] as const;
 
 export const providers = {
   kiro,
@@ -56,6 +58,7 @@ export const providers = {
   byok,
   "gitlab-duo": gitlabDuo,
   youmind,
+  gumloop,
 } as const;
 
 export type ProviderName = keyof typeof providers;

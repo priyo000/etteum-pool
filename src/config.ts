@@ -111,8 +111,17 @@ export const config = {
   browserEngine: process.env.BROWSER_ENGINE || "camoufox",
   captchaService: process.env.CAPTCHA_SERVICE || "none",
   captchaApiKey: process.env.CAPTCHA_API_KEY || "",
-  // Providers: kiro, kiro-pro, codebuddy, canva, codex, qoder, gitlab-duo
-  providers: ["kiro", "kiro-pro", "codebuddy", "canva", "codex", "qoder", "gitlab-duo"] as const,
+  // Providers: kiro, kiro-pro, codebuddy, codebuddy-china, canva, codex, qoder, gitlab-duo, gumloop
+  providers: ["kiro", "kiro-pro", "codebuddy", "codebuddy-china", "canva", "codex", "qoder", "gitlab-duo", "gumloop"] as const,
+
+  // ── Gumloop ───────────────────────────────────────────────────────────────
+  // Firebase project agenthub-dev (public web API key, exposed in Gumloop JS bundle).
+  // Used to refresh the user's Firebase ID token after Google OAuth login so the
+  // provider can register a client-generated UUID API key via POST /secret.
+  // Set via env var GUMLOOP_FIREBASE_API_KEY (see .env.example).
+  gumloopFirebaseApiKey: process.env.GUMLOOP_FIREBASE_API_KEY || "",
+  gumloopApiBase: process.env.GUMLOOP_API_BASE || "https://api.gumloop.com",
+  gumloopChatBase: process.env.GUMLOOP_CHAT_BASE || "https://ws.gumloop.com",
 } as const;
 
 export type Config = typeof config;

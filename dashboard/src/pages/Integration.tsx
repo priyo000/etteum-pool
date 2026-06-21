@@ -39,6 +39,8 @@ const CLAUDE_CODE_SLOTS = [
   { source: "haiku", title: "Haiku", desc: "small / fast / background tasks" },
   { source: "sonnet", title: "Sonnet", desc: "main coding model" },
   { source: "opus", title: "Opus", desc: "heavy reasoning" },
+  { source: "fable", title: "Fable", desc: "mythos-class · long-horizon (safeguarded)" },
+  { source: "mythos", title: "Mythos", desc: "mythos-class · unrestricted heavy lifting" },
 ] as const;
 
 /** Searchable model dropdown. */

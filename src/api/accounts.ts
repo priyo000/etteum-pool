@@ -1185,12 +1185,13 @@ accountsRouter.get("/:id", async (c) => {
  */
 accountsRouter.post("/", async (c) => {
   const body = await c.req.json<{
-    provider: "kiro" | "kiro-pro" | "codebuddy" | "codebuddy-china" | "canva" | "codex" | "qoder" | "gitlab-duo" | "youmind";
+    provider: "kiro" | "kiro-pro" | "codebuddy" | "codebuddy-china" | "canva" | "codex" | "qoder" | "gitlab-duo" | "youmind" | "gumloop";
     email?: string;
     password?: string;
     personalToken?: string;
     apiKey?: string; // YouMind sk-ym-... key
     apiKeys?: string; // CodeBuddy China bulk: newline-separated ck_... keys
+    bulkTokens?: string; // Gumloop bulk: newline-separated `uid|refresh_token` (or `email|uid|refresh_token`)
     tokens?: Record<string, unknown>;
     status?: "active" | "pending";
     browserEngine?: string;
@@ -1298,6 +1299,93 @@ accountsRouter.post("/", async (c) => {
       const msg = error instanceof Error ? error.message : String(error);
       return c.json({ error: `YouMind API key activation failed: ${msg}` }, 400);
     }
+  }
+
+  // ── Gumloop: Bulk Firebase token flow (uid|refresh_token) ────────────
+  // Accept multiple `uid|refresh_token` pairs (one per line), optionally with
+  // email prefix (`email|uid|refresh_token`). Store refresh_token encrypted in
+  // password + JSON tokens {uid, refresh_token} for provider. Provider will
+  // auto-generate & register UUID API key via /secret on first use.
+  if (body.provider === "gumloop" && body.bulkTokens) {
+    const lines = body.bulkTokens
+      .split("\n")
+      .map((l: string) => l.trim())
+      .filter((l: string) => l.length > 0);
+
+    if (lines.length === 0) {
+      return c.json({ error: "bulkTokens is empty" }, 400);
+    }
+
+    const parsed: Array<{ email: string; uid: string; refreshToken: string }> = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      const parts = line.split("|").map((p) => p.trim());
+      let email: string;
+      let uid: string;
+      let refreshToken: string;
+      if (parts.length === 2) {
+        uid = parts[0]!;
+        refreshToken = parts[1]!;
+        email = `gumloop-${uid.slice(0, 8)}@firebase`;
+      } else if (parts.length === 3) {
+        email = parts[0]!;
+        uid = parts[1]!;
+        refreshToken = parts[2]!;
+      } else {
+        return c.json({ error: `Invalid line ${i + 1}: expected "uid|refresh_token" or "email|uid|refresh_token"` }, 400);
+      }
+      if (!uid || !refreshToken) {
+        return c.json({ error: `Invalid line ${i + 1}: uid and refresh_token required` }, 400);
+      }
+      parsed.push({ email, uid, refreshToken });
+    }
+
+    const created: Array<{ id: number; email: string }> = [];
+    for (const { email, uid, refreshToken } of parsed) {
+      const encryptedRefresh = encrypt(refreshToken);
+      const tokens = JSON.stringify({ uid, refresh_token: refreshToken });
+
+      // Upsert by (provider, email)
+      const existing = await db.select().from(accounts)
+        .where(eq(accounts.email, email))
+        .then((rows) => rows.find((r) => r.provider === "gumloop"));
+
+      if (existing) {
+        await db.update(accounts).set({
+          password: encryptedRefresh,
+          status: "active",
+          tokens,
+          errorMessage: null,
+          lastLoginAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(accounts.id, existing.id));
+        created.push({ id: existing.id, email });
+        continue;
+      }
+
+      const inserted = await db.insert(accounts).values({
+        provider: "gumloop",
+        email,
+        password: encryptedRefresh,
+        status: "active",
+        tokens,
+        quotaLimit: -1,
+        quotaRemaining: -1,
+        lastLoginAt: new Date(),
+      }).returning();
+      if (inserted[0]) {
+        created.push({ id: inserted[0].id, email });
+      }
+    }
+
+    pool.invalidate("gumloop" as any);
+    broadcast({ type: "account_created", data: { provider: "gumloop", count: created.length } });
+
+    return c.json({
+      success: true,
+      count: created.length,
+      accounts: created,
+    }, 201);
   }
 
   // ── CodeBuddy China: Bulk API key flow (ck_...) ─────────────────────

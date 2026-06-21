@@ -42,7 +42,7 @@ import {
   type ByokProvider,
 } from "@/lib/api";
 
-type Provider = "kiro" | "kiro-pro" | "codebuddy" | "codebuddy-china" | "canva" | "codex" | "qoder" | "gitlab-duo" | "youmind";
+type Provider = "kiro" | "kiro-pro" | "codebuddy" | "codebuddy-china" | "canva" | "codex" | "qoder" | "gitlab-duo" | "youmind" | "gumloop";
 
 type ByokFormKey = {
   id?: number;
@@ -62,12 +62,13 @@ interface Account {
   quotaRemaining?: number;
 }
 
-const providers: Provider[] = ["kiro", "kiro-pro", "codebuddy", "codebuddy-china", "canva", "codex", "qoder", "gitlab-duo", "youmind"];
+const providers: Provider[] = ["kiro", "kiro-pro", "codebuddy", "codebuddy-china", "canva", "codex", "qoder", "gitlab-duo", "youmind", "gumloop"];
 
 function labelProvider(provider: string) {
   if (provider === "kiro-pro") return "Kiro Pro";
   if (provider === "codebuddy") return "CodeBuddy";
   if (provider === "codebuddy-china") return "CodeBuddy CN";
+  if (provider === "gumloop") return "Gumloop";
   if (provider === "codex") return "Codex";
   if (provider === "qoder") return "Qoder";
   if (provider === "gitlab-duo") return "GitLab Duo";
@@ -109,6 +110,10 @@ export default function Accounts() {
   const [codebuddyChinaApiKey, setCodebuddyChinaApiKey] = useState("");
   const [codebuddyChinaBulkApiKeys, setCodebuddyChinaBulkApiKeys] = useState("");
   const [codebuddyChinaBusy, setCodebuddyChinaBusy] = useState(false);
+
+  // Gumloop: bulk Firebase token flow (uid|refresh_token)
+  const [gumloopBulkTokens, setGumloopBulkTokens] = useState("");
+  const [gumloopBusy, setGumloopBusy] = useState(false);
   const [loginPendingDialog, setLoginPendingDialog] = useState(false);
   const [loginPendingConcurrency, setLoginPendingConcurrency] = useState(2);
   const [byokProviders, setByokProviders] = useState<ByokProvider[]>([]);
@@ -475,6 +480,35 @@ export default function Accounts() {
       await load();
     } catch (err) { showError(err); }
     finally { setCodebuddyChinaBusy(false); }
+  }
+
+  async function handleGumloopBulkLogin() {
+    const text = gumloopBulkTokens.trim();
+    if (!text) { showError(new Error("Paste uid|refresh_token lines")); return; }
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) { showError(new Error("No valid lines found")); return; }
+    for (let i = 0; i < lines.length; i++) {
+      const parts = lines[i].split("|").map(p => p.trim());
+      if (parts.length !== 2 && parts.length !== 3) {
+        showError(new Error(`Line ${i + 1}: expected "uid|refresh_token" or "email|uid|refresh_token"`));
+        return;
+      }
+    }
+    setGumloopBusy(true);
+    try {
+      const res = await fetchApi<any>("/api/accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "gumloop",
+          bulkTokens: text,
+        }),
+      });
+      showSuccess(`Added ${res.count} Gumloop account(s) successfully`);
+      setGumloopBulkTokens("");
+      setAddDialogProvider(null);
+      await load();
+    } catch (err) { showError(err); }
+    finally { setGumloopBusy(false); }
   }
 
   async function handleBulkImport() {
@@ -1518,6 +1552,12 @@ export default function Accounts() {
                 className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "pat" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
               >API Key (sk-ym-...)</button>
             </div>
+          ) : addDialogProvider === "gumloop" ? (
+            <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
+              <button onClick={() => setAddMode("apikey")}
+                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "apikey" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
+              >Bulk Firebase Token (uid|refresh_token)</button>
+            </div>
           ) : addDialogProvider === "codebuddy-china" ? (
             <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
               <button onClick={() => setAddMode("apikey")}
@@ -1658,6 +1698,30 @@ ck_xyz789ghi012..."
                 <Button variant="outline" onClick={() => setAddDialogProvider(null)} disabled={codebuddyChinaBusy}>Cancel</Button>
                 <Button onClick={handleCodeBuddyChinaBulkApiKey} disabled={codebuddyChinaBusy || !codebuddyChinaBulkApiKeys.trim()}>
                   {codebuddyChinaBusy ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...</>) : "Add Accounts"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {addMode === "apikey" && addDialogProvider === "gumloop" && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-[var(--foreground)]">Firebase Tokens (satu per baris)</label>
+                <textarea
+                  value={gumloopBulkTokens}
+                  onChange={(e) => setGumloopBulkTokens(e.target.value)}
+                  className="mt-1 w-full h-40 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
+                  placeholder={"uid|refresh_token\ntxX0a1yZlOZPuuh7ub5YfZ1kGK83|AMF-vBwxsrnIux00hzfCS5aQ...\nemail@example.com|uid|refresh_token"}
+                  disabled={gumloopBusy}
+                />
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Login Gumloop via Google OAuth di browser. Setelah login, extract <code>uid</code> &amp; <code>refreshToken</code> dari IndexedDB <code>firebaseLocalStorageDb</code> via DevTools Console. Paste sebagai <code>uid|refresh_token</code> (atau <code>email|uid|refresh_token</code>). Provider akan auto-generate UUID API key &amp; register via <code>/secret</code> pada first request. Models: <code>gl-claude-sonnet-4.5</code>.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setAddDialogProvider(null)} disabled={gumloopBusy}>Cancel</Button>
+                <Button onClick={handleGumloopBulkLogin} disabled={gumloopBusy || !gumloopBulkTokens.trim()}>
+                  {gumloopBusy ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...</>) : "Add Accounts"}
                 </Button>
               </div>
             </div>
