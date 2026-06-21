@@ -606,6 +606,24 @@ export class GumloopProvider extends BaseProvider {
       return { success: false, error };
     }
 
+    // ── Tool use streaming ──────────────────────────────────────────────
+    // Gumloop's stream mode DOES send delta.tool_calls — verified via
+    // test-gumloop-raw-stream.ts on 2026-06-22:
+    //   chunk 0: { tool_calls: [{ index:0, id:"toolu_...", function:{ name:"Bash", arguments:"" } }] }
+    //   chunk 1-N: { tool_calls: [{ index:0, function:{ arguments:"partial..." } }] }
+    //   chunk N+1: { finish_reason: "tool_use", usage: {...} }
+    //   chunk N+2: { finish_reason: "stop" }  ← duplicate, suppressed by parser
+    //
+    // Previously we fell back to non-stream for tool use. That caused
+    // "streaming malah non-stream" — the client waited for the entire
+    // response before seeing anything. Now we stream natively.
+    //
+    // The stream parser below (NORMALIZED_FINISH + hasToolCalls check)
+    // forwards delta.tool_calls chunks to the edge proxy's
+    // openAIStreamToAnthropic transform, which converts them to
+    // content_block_start(tool_use) + input_json_delta + content_block_stop.
+
+
     const upstreamModel = this.resolveModel(request.model);
     const body = this.buildBody(request, upstreamModel);
     body.stream = true;
@@ -744,24 +762,47 @@ export class GumloopProvider extends BaseProvider {
                   const delta = choice.delta;
                   const hasContent = delta && typeof delta.content === "string" && delta.content.length > 0;
                   const hasReasoning = delta && typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0;
+                  const hasToolCalls = delta && Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0;
 
-                  // Skip empty delta chunks that have no finish_reason (noise)
-                  if (!fr && !hasContent && !hasReasoning) continue;
+                  // Skip empty delta chunks that have no finish_reason and no
+                  // content, reasoning, or tool_calls (noise).
+                  // IMPORTANT: tool_calls chunks have no content/reasoning —
+                  // skipping them loses all tool call arguments!
+                  if (!fr && !hasContent && !hasReasoning && !hasToolCalls) continue;
 
                   // If we already sent a finish_reason, suppress further
                   // finish_reason chunks (Gumloop sends end_turn then stop).
                   // Only allow a new finish_reason if it's different AND
                     // carries content (extremely rare).
                   if (fr && finishReasonSent) {
-                    // Duplicate finish_reason chunk — skip if it's just an
-                    // empty delta with a redundant finish_reason.
-                    if (!hasContent && !hasReasoning) continue;
+                    if (!hasContent && !hasReasoning && !hasToolCalls) continue;
                   }
 
                   if (fr) finishReasonSent = fr;
 
-                  // Re-emit clean SSE chunk
-                  const cleanChunk: any = {
+                  // Early termination: once we've sent a finish_reason that
+                  // signals completion (stop, tool_calls, length), emit [DONE]
+                  // and close immediately. Gumloop sends duplicate finish_reasons
+                  // (e.g. tool_use → stop) and trailing error chunks — we must
+                  // not wait for those.
+                  if (fr === "stop" || fr === "tool_calls" || fr === "length") {
+                    const cleanChunk: any = {
+                      id: chunk.id || lastChunkId || `chatcmpl-gumloop-${Date.now()}`,
+                      object: "chat.completion.chunk",
+                      created: chunk.created || lastChunkCreated || Math.floor(Date.now() / 1000),
+                      model: chunk.model || lastChunkModel || upstreamModel,
+                      choices: [{ index: 0, delta: delta || {}, finish_reason: fr }],
+                    };
+                    if (lastUsage) cleanChunk.usage = lastUsage;
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(cleanChunk)}\n\n`));
+                    controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                    reader.releaseLock();
+                    controller.close();
+                    return;
+                  }
+
+                  // Re-emit clean SSE chunk (for non-stop finish_reason or content)
+                  const outChunk: any = {
                     id: chunk.id || lastChunkId || `chatcmpl-gumloop-${Date.now()}`,
                     object: "chat.completion.chunk",
                     created: chunk.created || lastChunkCreated || Math.floor(Date.now() / 1000),
@@ -775,10 +816,10 @@ export class GumloopProvider extends BaseProvider {
 
                   // Attach usage to the final chunk (the one with finish_reason)
                   if (fr && lastUsage) {
-                    cleanChunk.usage = lastUsage;
+                    outChunk.usage = lastUsage;
                   }
 
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(cleanChunk)}\n\n`));
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(outChunk)}\n\n`));
                 }
               }
               // Stream ended without [DONE] — emit one for client compatibility
