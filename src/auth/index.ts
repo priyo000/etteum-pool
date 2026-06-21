@@ -127,11 +127,11 @@ authRouter.post("/bulk-add", async (c) => {
 
   // Validate providers
   const validProviders = providers.filter((p) =>
-    ["kiro", "kiro-pro", "codebuddy", "canva", "codex", "qoder", "gitlab-duo"].includes(p)
+    ["kiro", "kiro-pro", "codebuddy", "canva", "codex", "qoder"].includes(p)
   );
 
   if (validProviders.length === 0) {
-    return c.json({ error: "At least one valid provider is required (kiro, kiro-pro, codebuddy, canva, codex, qoder, gitlab-duo)" }, 400);
+    return c.json({ error: "At least one valid provider is required (kiro, kiro-pro, codebuddy, canva, codex, qoder)" }, 400);
   }
 
   const items = body.accounts.map((a) => ({

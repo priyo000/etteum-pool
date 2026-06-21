@@ -310,8 +310,8 @@ export function mapHealthToAccountUpdate(account: Account, health: ProviderHealt
       const rawLimit = Number(health.quota.limit);
       const rawRemaining = Number(health.quota.remaining);
       // Sentinel `-1` means "unknown / unlimited" — preserve whatever the
-      // provider already wrote into the DB (e.g. via createGitlabDuoAccount /
-      // /refresh) instead of clobbering it with the sentinel.
+      // provider already wrote into the DB instead of clobbering it with the
+      // sentinel.
       if (Number.isFinite(rawLimit) && rawLimit >= 0) {
         update.quotaLimit = rawLimit;
         update.quotaRemaining = Math.max(0, Number.isFinite(rawRemaining) ? rawRemaining : 0);

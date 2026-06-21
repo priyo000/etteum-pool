@@ -238,23 +238,6 @@ function checkDataDir() {
   }
 }
 
-function checkPrivateProviders() {
-  // Private build only — these are optional but warn if a recent clone is missing them
-  const duoDir = join(ROOT, "src", "proxy", "providers", "gitlab-duo");
-  const youmindFile = join(ROOT, "src", "proxy", "providers", "youmind.ts");
-
-  if (existsSync(duoDir)) {
-    pushOk("Provider: gitlab-duo", "present (private build)");
-  } else {
-    pushWarn("Provider: gitlab-duo", "folder missing", "Re-clone from private repo if you expected this provider");
-  }
-  if (existsSync(youmindFile)) {
-    pushOk("Provider: youmind", "present (private build)");
-  } else {
-    pushWarn("Provider: youmind", "file missing", "Re-clone from private repo if you expected this provider");
-  }
-}
-
 // ── Main ───────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -269,7 +252,6 @@ checkDotenv();
 checkNodeModules();
 checkDashboardBuild();
 checkDataDir();
-checkPrivateProviders();
 
 const okCount = checks.filter((c) => c.severity === "ok").length;
 const warnCount = checks.filter((c) => c.severity === "warn").length;

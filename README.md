@@ -12,8 +12,6 @@
 
 ## ⚡ Quick Start — One Command
 
-> **Prerequisite:** your SSH public key must be added to GitHub and have read access to `priyo000/etteum`. Test it first: `ssh -T git@github.com`.
-
 ### Linux / macOS / WSL
 
 ```bash
@@ -361,12 +359,11 @@ If `etteum doctor` shows everything ✓ but it still doesn't work, open an issue
 Re-run the installer (it pulls latest, rebuilds, migrates):
 
 ```bash
-# From your existing checkout
-cd ~/etteum-pool
-git pull
-bash install.sh    # Linux/macOS — re-runs everything idempotently
-# or on Windows:
-# powershell -ExecutionPolicy Bypass -File install.ps1
+# Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.sh | bash
+
+# Windows
+irm https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.ps1 | iex
 ```
 
 Or use the CLI:
@@ -389,8 +386,6 @@ etteum update
 | **Codex**         | OAuth/Token      | OpenAI / GPT-4o                      |
 | **Canva**         | Email/Password   | Image generation (Flux Pro)          |
 | **Qoder**         | PAT Token        | Claude models, 1M context, free tier |
-| **GitLab Duo** 🔒 | PAT Token        | GitLab AI; private build only        |
-| **YouMind** 🔒    | API Key          | Private build only                   |
 | **BYOK**          | API Key          | Bring your own keys (any compatible) |
 
 ### Request flow
@@ -447,8 +442,7 @@ MIT License — see [LICENSE](LICENSE).
 
 ## Support
 
-- **Issues:** [GitHub Issues](https://github.com/priyo000/etteum/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/priyo000/etteum/discussions)
-- **Public mirror (no GitLab Duo / YouMind):** [`priyo000/etteum-pool`](https://github.com/priyo000/etteum-pool)
+- **Issues:** [GitHub Issues](https://github.com/priyo000/etteum-pool/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/priyo000/etteum-pool/discussions)
 
 **Made with ❤️ for the AI community**

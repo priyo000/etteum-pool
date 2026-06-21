@@ -27,5 +27,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["dashboard", "plans", "scripts"]
+  "exclude": ["dashboard", "plans"]
 }

@@ -42,7 +42,7 @@ import {
   type ByokProvider,
 } from "@/lib/api";
 
-type Provider = "kiro" | "kiro-pro" | "codebuddy" | "codebuddy-china" | "canva" | "codex" | "qoder" | "gitlab-duo" | "youmind" | "gumloop";
+type Provider = "kiro" | "kiro-pro" | "codebuddy" | "codebuddy-china" | "canva" | "codex" | "qoder";
 
 type ByokFormKey = {
   id?: number;
@@ -62,13 +62,12 @@ interface Account {
   quotaRemaining?: number;
 }
 
-const providers: Provider[] = ["kiro", "kiro-pro", "codebuddy", "codebuddy-china", "canva", "codex", "qoder", "gitlab-duo", "youmind", "gumloop"];
+const providers: Provider[] = ["kiro", "kiro-pro", "codebuddy", "codebuddy-china", "canva", "codex", "qoder"];
 
 function labelProvider(provider: string) {
   if (provider === "kiro-pro") return "Kiro Pro";
   if (provider === "codebuddy") return "CodeBuddy";
   if (provider === "codebuddy-china") return "CodeBuddy CN";
-  if (provider === "gumloop") return "Gumloop";
   if (provider === "codex") return "Codex";
   if (provider === "qoder") return "Qoder";
   if (provider === "gitlab-duo") return "GitLab Duo";
@@ -101,19 +100,9 @@ export default function Accounts() {
   const [codexOauthBusy, setCodexOauthBusy] = useState(false);
   const [codexOauthAuthUrl, setCodexOauthAuthUrl] = useState("");
   const [codexOauthCallbackUrl, setCodexOauthCallbackUrl] = useState("");
-  const [gitlabBaseUrl, setGitlabBaseUrl] = useState("https://gitlab.com");
-  const [gitlabPat, setGitlabPat] = useState("");
-  const [gitlabLabel, setGitlabLabel] = useState("");
-  const [gitlabBusy, setGitlabBusy] = useState(false);
-  const [youmindApiKey, setYoumindApiKey] = useState("");
-  const [youmindBusy, setYoumindBusy] = useState(false);
   const [codebuddyChinaApiKey, setCodebuddyChinaApiKey] = useState("");
   const [codebuddyChinaBulkApiKeys, setCodebuddyChinaBulkApiKeys] = useState("");
   const [codebuddyChinaBusy, setCodebuddyChinaBusy] = useState(false);
-
-  // Gumloop: bulk Firebase token flow (uid|refresh_token)
-  const [gumloopBulkTokens, setGumloopBulkTokens] = useState("");
-  const [gumloopBusy, setGumloopBusy] = useState(false);
   const [loginPendingDialog, setLoginPendingDialog] = useState(false);
   const [loginPendingConcurrency, setLoginPendingConcurrency] = useState(2);
   const [byokProviders, setByokProviders] = useState<ByokProvider[]>([]);
@@ -373,57 +362,6 @@ export default function Accounts() {
     } catch (err) { showError(err); }
   }
 
-  async function handleGitlabPatLogin() {
-    const pat = gitlabPat.trim();
-    if (!pat) { showError(new Error("Paste GitLab Personal Access Token")); return; }
-    const baseUrl = (gitlabBaseUrl || "https://gitlab.com").trim().replace(/\/$/, "");
-    setGitlabBusy(true);
-    try {
-      const res = await fetchApi<any>("/api/accounts/gitlab-duo", {
-        method: "POST",
-        body: JSON.stringify({
-          gitlab_base_url: baseUrl,
-          pat,
-          label: gitlabLabel.trim() || undefined,
-        }),
-      });
-      const labelText = res?.account?.email || res?.email || "account";
-      showSuccess(`GitLab Duo ${labelText} added successfully`);
-      setGitlabPat("");
-      setGitlabLabel("");
-      setAddDialogProvider(null);
-      await load();
-    } catch (err) { showError(err); }
-    finally { setGitlabBusy(false); }
-  }
-
-  async function handleYouMindApiKeyLogin() {
-    const apiKey = youmindApiKey.trim();
-    if (!apiKey) { showError(new Error("Paste YouMind API key")); return; }
-    if (!apiKey.startsWith("sk-ym-")) {
-      showError(new Error("YouMind API key must start with sk-ym-"));
-      return;
-    }
-    setYoumindBusy(true);
-    try {
-      const res = await fetchApi<any>("/api/accounts", {
-        method: "POST",
-        body: JSON.stringify({
-          provider: "youmind",
-          apiKey,
-        }),
-      });
-      const labelText = res?.email || "account";
-      showSuccess(res?.updated
-        ? `YouMind key updated (${labelText})`
-        : `YouMind ${labelText} added successfully`);
-      setYoumindApiKey("");
-      setAddDialogProvider(null);
-      await load();
-    } catch (err) { showError(err); }
-    finally { setYoumindBusy(false); }
-  }
-
   async function handleCodebuddyChinaApiKeyLogin() {
     const apiKey = codebuddyChinaApiKey.trim();
     if (!apiKey) { showError(new Error("Paste CodeBuddy China API key")); return; }
@@ -480,35 +418,6 @@ export default function Accounts() {
       await load();
     } catch (err) { showError(err); }
     finally { setCodebuddyChinaBusy(false); }
-  }
-
-  async function handleGumloopBulkLogin() {
-    const text = gumloopBulkTokens.trim();
-    if (!text) { showError(new Error("Paste uid|refresh_token lines")); return; }
-    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-    if (lines.length === 0) { showError(new Error("No valid lines found")); return; }
-    for (let i = 0; i < lines.length; i++) {
-      const parts = lines[i].split("|").map(p => p.trim());
-      if (parts.length !== 2 && parts.length !== 3) {
-        showError(new Error(`Line ${i + 1}: expected "uid|refresh_token" or "email|uid|refresh_token"`));
-        return;
-      }
-    }
-    setGumloopBusy(true);
-    try {
-      const res = await fetchApi<any>("/api/accounts", {
-        method: "POST",
-        body: JSON.stringify({
-          provider: "gumloop",
-          bulkTokens: text,
-        }),
-      });
-      showSuccess(`Added ${res.count} Gumloop account(s) successfully`);
-      setGumloopBulkTokens("");
-      setAddDialogProvider(null);
-      await load();
-    } catch (err) { showError(err); }
-    finally { setGumloopBusy(false); }
   }
 
   async function handleBulkImport() {
@@ -692,11 +601,8 @@ export default function Accounts() {
     if (provider === "codex") {
       setAddMode("pat");
     }
-    if (provider === "gitlab-duo") {
-      setAddMode("pat");
-    }
-    if (provider === "youmind") {
-      setAddMode("pat");
+    if (provider === "codebuddy-china") {
+      setAddMode("apikey");
     }
     setAddDialogProvider(provider);
   }
@@ -1496,10 +1402,6 @@ export default function Accounts() {
                 ? "Add via browser login or instant login with API key/token."
                 : addDialogProvider === "qoder"
                 ? "Add via PAT, bulk Google accounts, or single account."
-                : addDialogProvider === "gitlab-duo"
-                ? "Add via Personal Access Token, single Gmail (bot login), or bulk email|password."
-                : addDialogProvider === "youmind"
-                ? "Paste your YouMind API key (sk-ym-...). Server will validate against the OpenAPI relay and store it encrypted."
                 : addDialogProvider === "codebuddy-china"
                 ? "Paste CodeBuddy China API keys (ck_...). Satu key per baris untuk bulk import."
                 : `Add account for ${addDialogProvider ? labelProvider(addDialogProvider) : "this provider"}.`}
@@ -1533,30 +1435,6 @@ export default function Accounts() {
               <button onClick={() => setAddMode("single")}
                 className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "single" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
               >Single</button>
-            </div>
-          ) : addDialogProvider === "gitlab-duo" ? (
-            <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
-              <button onClick={() => setAddMode("pat")}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "pat" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
-              >PAT (Token)</button>
-              <button onClick={() => setAddMode("single")}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "single" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
-              >Gmail (Single)</button>
-              <button onClick={() => setAddMode("bulk")}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "bulk" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
-              >Bulk (Email|Pass)</button>
-            </div>
-          ) : addDialogProvider === "youmind" ? (
-            <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
-              <button onClick={() => setAddMode("pat")}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "pat" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
-              >API Key (sk-ym-...)</button>
-            </div>
-          ) : addDialogProvider === "gumloop" ? (
-            <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
-              <button onClick={() => setAddMode("apikey")}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${addMode === "apikey" ? "bg-[var(--background)] text-[var(--foreground)] shadow-sm" : "text-[var(--muted-foreground)]"}`}
-              >Bulk Firebase Token (uid|refresh_token)</button>
             </div>
           ) : addDialogProvider === "codebuddy-china" ? (
             <div className="flex gap-1 rounded-md bg-[var(--secondary)] p-1">
@@ -1595,86 +1473,6 @@ export default function Accounts() {
             </div>
           )}
 
-          {addMode === "pat" && addDialogProvider === "youmind" && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-[var(--foreground)]">YouMind API Key</label>
-                <textarea
-                  value={youmindApiKey}
-                  onChange={(e) => setYoumindApiKey(e.target.value)}
-                  className="mt-1 w-full h-32 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
-                  placeholder="sk-ym-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                  disabled={youmindBusy}
-                />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Paste your YouMind API key from{" "}
-                  <a href="https://youmind.com" target="_blank" rel="noreferrer" className="underline">youmind.com</a>{" "}
-                  Settings → API Keys. Server validates via <code>POST /openapi/v1/listBoards</code> and stores the key encrypted.
-                  Available models: <code>ym-claude-opus-4.6/4.7/4.8</code>, <code>ym-claude-sonnet-4.6</code>, <code>ym-gpt-5.5</code>, <code>ym-gpt-4o</code>.
-                </p>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setAddDialogProvider(null)} disabled={youmindBusy}>Cancel</Button>
-                <Button onClick={handleYouMindApiKeyLogin} disabled={youmindBusy}>
-                  {youmindBusy ? "Validating..." : "Add Account"}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {addMode === "pat" && addDialogProvider === "gitlab-duo" && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-[var(--foreground)]">GitLab Base URL</label>
-                <Input
-                  value={gitlabBaseUrl}
-                  onChange={(e) => setGitlabBaseUrl(e.target.value)}
-                  placeholder="https://gitlab.com"
-                  className="mt-1 font-mono text-sm"
-                  disabled={gitlabBusy}
-                />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Default <code>https://gitlab.com</code>. Ganti kalau pakai self-hosted GitLab.</p>
-              </div>
-              <div>
-                <label className="text-sm text-[var(--foreground)]">Personal Access Token (PAT)</label>
-                <textarea
-                  value={gitlabPat}
-                  onChange={(e) => setGitlabPat(e.target.value)}
-                  className="mt-1 w-full h-28 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
-                  placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
-                  disabled={gitlabBusy}
-                />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Butuh scope <code>api</code>. Buat di{" "}
-                  <a
-                    href={`${(gitlabBaseUrl || "https://gitlab.com").replace(/\/$/, "")}/-/user_settings/personal_access_tokens?scopes=api&name=poolprox3-duo`}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="underline text-[var(--foreground)] hover:opacity-80"
-                  >
-                    User Settings → Access Tokens
-                  </a>.
-                </p>
-              </div>
-              <div>
-                <label className="text-sm text-[var(--foreground)]">Label (opsional)</label>
-                <Input
-                  value={gitlabLabel}
-                  onChange={(e) => setGitlabLabel(e.target.value)}
-                  placeholder="default: GitLab username"
-                  className="mt-1"
-                  disabled={gitlabBusy}
-                />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Kosongkan untuk pakai username GitLab. Harus unik per instance.</p>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setAddDialogProvider(null)} disabled={gitlabBusy}>Cancel</Button>
-                <Button onClick={handleGitlabPatLogin} disabled={gitlabBusy || !gitlabPat.trim()}>
-                  {gitlabBusy ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Validating PAT...</>) : "Add Account"}
-                </Button>
-              </div>
-            </div>
-          )}
 
           {addMode === "apikey" && addDialogProvider === "codebuddy-china" && (
             <div className="space-y-4">
@@ -1698,30 +1496,6 @@ ck_xyz789ghi012..."
                 <Button variant="outline" onClick={() => setAddDialogProvider(null)} disabled={codebuddyChinaBusy}>Cancel</Button>
                 <Button onClick={handleCodeBuddyChinaBulkApiKey} disabled={codebuddyChinaBusy || !codebuddyChinaBulkApiKeys.trim()}>
                   {codebuddyChinaBusy ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...</>) : "Add Accounts"}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {addMode === "apikey" && addDialogProvider === "gumloop" && (
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-[var(--foreground)]">Firebase Tokens (satu per baris)</label>
-                <textarea
-                  value={gumloopBulkTokens}
-                  onChange={(e) => setGumloopBulkTokens(e.target.value)}
-                  className="mt-1 w-full h-40 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-none"
-                  placeholder={"uid|refresh_token\ntxX0a1yZlOZPuuh7ub5YfZ1kGK83|AMF-vBwxsrnIux00hzfCS5aQ...\nemail@example.com|uid|refresh_token"}
-                  disabled={gumloopBusy}
-                />
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Login Gumloop via Google OAuth di browser. Setelah login, extract <code>uid</code> &amp; <code>refreshToken</code> dari IndexedDB <code>firebaseLocalStorageDb</code> via DevTools Console. Paste sebagai <code>uid|refresh_token</code> (atau <code>email|uid|refresh_token</code>). Provider akan auto-generate UUID API key &amp; register via <code>/secret</code> pada first request. Models: <code>gl-claude-sonnet-4.5</code>.
-                </p>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setAddDialogProvider(null)} disabled={gumloopBusy}>Cancel</Button>
-                <Button onClick={handleGumloopBulkLogin} disabled={gumloopBusy || !gumloopBulkTokens.trim()}>
-                  {gumloopBusy ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...</>) : "Add Accounts"}
                 </Button>
               </div>
             </div>

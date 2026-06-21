@@ -37,15 +37,11 @@ const gitlabDuo = new GitlabDuoProvider();
 const youmind = new YouMindProvider();
 const gumloop = new GumloopProvider();
 
-// Priority order. canva/qoder/codex/kiro-pro/youmind have unique prefixes; codex
+// Priority order. canva/qoder/codex/kiro-pro have unique prefixes; codex
 // is listed before codebuddy so the literal "gpt-5-codex" resolves to codex
 // while codebuddy keeps its own "gpt-5*"/"gpt-5.x-codex" models. byok checks
-// dynamic prefixes from DB accounts. kiro is the fallback. gitlab-duo owns
-// `claude_(haiku|sonnet|opus)_<digit>...` underscore-style identifiers — no
-// overlap with any other provider, so position is not load-bearing. youmind
-// owns the `ym-*` prefix exclusively — also position-independent, but slotted
-// alongside the other prefix-based providers for readability.
-const PROVIDER_ORDER = [gitlabDuo, canva, qoder, codex, kiroPro, youmind, byok, codebuddyChina, codebuddy, gumloop, kiro] as const;
+// dynamic prefixes from DB accounts. kiro is the fallback.
+const PROVIDER_ORDER = [canva, qoder, codex, kiroPro, byok, codebuddyChina, codebuddy, kiro] as const;
 
 export const providers = {
   kiro,
@@ -94,9 +90,3 @@ export async function refreshGitlabDuoModels(): Promise<void> {
 export function getByokProvider(): ByokProvider {
   return byok;
 }
-
-/** Get GitLab Duo provider instance. */
-export function getGitlabDuoProvider(): GitlabDuoProvider {
-  return gitlabDuo;
-}
-

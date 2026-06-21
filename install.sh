@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Etteum Pool installer (PRIVATE) for Linux and macOS (also WSL).
-#
-# This is the private repo's installer. It mirrors install.sh in the public
-# repo but defaults to the private repo URL. The private build includes
-# extra providers (gitlab-duo, youmind) — installer flow is identical.
+# Etteum Pool installer for Linux and macOS (also WSL).
 #
 # One-command install:
 #   curl -fsSL https://raw.githubusercontent.com/priyo000/etteum/main/install.sh | bash
@@ -13,7 +9,7 @@
 #
 # Environment variables (all optional):
 #   ETTEUM_HOME       Install directory (default: ~/etteum-pool)
-#   ETTEUM_REPO       Repo URL (default: github.com/priyo000/etteum — PRIVATE)
+#   ETTEUM_REPO       Repo URL (default: github.com/priyo000/etteum-pool)
 #   ETTEUM_YES=1      Skip confirmation prompts (for CI / unattended installs)
 #   ETTEUM_BRANCH     Branch to clone (default: main)
 #   ETTEUM_NO_CLI=1   Skip the ~/.local/bin/etteum symlink

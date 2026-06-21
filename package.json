@@ -1,7 +1,7 @@
 {
   "name": "etteum-pool",
   "version": "1.0.0",
-  "description": "AI Proxy Pool for Multiple Providers (Kiro, CodeBuddy, Codex, Canva, Qoder, GitLab Duo, YouMind) — PRIVATE",
+  "description": "AI Proxy Pool for Multiple Providers (Kiro, CodeBuddy, Codex, Canva, Qoder)",
   "type": "module",
   "scripts": {
     "start": "bun scripts/production.ts",

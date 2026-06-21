@@ -218,8 +218,6 @@ async def run_provider(adapter, account: NormalizedAccount) -> dict:
 
     if provider_name == "codebuddy":
         max_retries = CODEBUDDY_MAX_RETRIES
-    elif provider_name == "gitlab-duo":
-        max_retries = GITLAB_DUO_MAX_RETRIES
     else:
         max_retries = MAX_RETRIES
 
@@ -229,8 +227,6 @@ async def run_provider(adapter, account: NormalizedAccount) -> dict:
                 timeout = KIRO_PRO_TIMEOUT
             elif provider_name == "codebuddy":
                 timeout = CODEBUDDY_TIMEOUT
-            elif provider_name == "gitlab-duo":
-                timeout = GITLAB_DUO_TIMEOUT
             else:
                 timeout = PROVIDER_TIMEOUT
             return await asyncio.wait_for(

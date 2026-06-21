@@ -1,18 +1,14 @@
-# Etteum Pool installer (PRIVATE) for Windows (PowerShell 5.1+ / 7+).
+# Etteum Pool installer for Windows (PowerShell 5.1+ / 7+).
 #
-# This is the private repo's installer. It mirrors install.ps1 in the public
-# repo but defaults to the private repo URL. The private build includes extra
-# providers (gitlab-duo, youmind) — installer flow is identical.
-#
-# One-command install (requires SSH key configured for the private repo):
-#   irm https://raw.githubusercontent.com/priyo000/etteum/main/install.ps1 | iex
+# One-command install:
+#   irm https://raw.githubusercontent.com/priyo000/etteum-pool/main/install.ps1 | iex
 #
 # Or after cloning:
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # Environment variables (all optional):
 #   $env:ETTEUM_HOME          Install directory (default: $HOME\etteum-pool)
-#   $env:ETTEUM_REPO          Repo URL (default: github.com/priyo000/etteum — PRIVATE)
+#   $env:ETTEUM_REPO          Repo URL
 #   $env:ETTEUM_YES = "1"     Skip confirmation (CI / unattended)
 #   $env:ETTEUM_BRANCH        Branch to clone (default: main)
 #   $env:ETTEUM_NO_CLI = "1"  Skip the etteum CLI in ~\.local\bin
@@ -22,7 +18,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$RepoUrl     = if ($env:ETTEUM_REPO)    { $env:ETTEUM_REPO }    else { "git@github.com:priyo000/etteum.git" }
+$RepoUrl     = if ($env:ETTEUM_REPO)    { $env:ETTEUM_REPO }    else { "https://github.com/priyo000/etteum-pool.git" }
 $DefaultDir  = if ($env:ETTEUM_HOME)    { $env:ETTEUM_HOME }    else { Join-Path $HOME "etteum-pool" }
 $Branch      = if ($env:ETTEUM_BRANCH)  { $env:ETTEUM_BRANCH }  else { "main" }
 $AssumeYes   = $env:ETTEUM_YES -eq "1"
