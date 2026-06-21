@@ -136,8 +136,11 @@ function isNativeProviderId(model: string): boolean {
   // Native ids using underscore convention: claude_sonnet_4_6, gpt_5_codex, gemini_3_5_flash, …
   if (/^(claude|gpt|gemini)_/.test(model)) return true;
   // Explicit alias prefixes used by routed providers:
+  if (model.startsWith("gl-")) return true;          // Gumloop
+  if (model.startsWith("ym-")) return true;          // YouMind
   if (model.startsWith("qd-")) return true;          // Qoder
   if (model.startsWith("cb-")) return true;          // CodeBuddy
+  if (model.startsWith("canva-")) return true;       // Canva
   if (model.startsWith("kiro:")) return true;        // Kiro Pro variant
   return false;
 }
