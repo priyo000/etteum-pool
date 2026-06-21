@@ -648,6 +648,13 @@ export class GumloopProvider extends BaseProvider {
           },
         });
 
+        // Usage (promptTokens, totalCompletionTokens) is captured inside the
+        // async stream reader above. Because ReadableStream.start() is async,
+        // these values may still be 0 at this return point for fast responses.
+        // The edge proxy's wrapStreamWithUsageFinalizer() also observes raw
+        // stream chunks via extractUsageFromSsePayload() as a backstop.
+        // We return what we have — the edge proxy will use upstream values if
+        // non-zero, otherwise fall back to estimation.
         return {
           success: true,
           stream,
