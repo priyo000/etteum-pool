@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { join, resolve } from "node:path";
 import { config } from "./config";
 import { runMigrations } from "./db/migrate";
 import { apiRouter } from "./api/index";
@@ -152,8 +153,8 @@ app.get("/api/info", (c) => {
 });
 
 // Serve dashboard static files (SPA fallback)
-const dashboardDist = new URL("../dashboard/dist", import.meta.url).pathname.replace(/^\/([A-Z]:)/i, "$1");
-const dashboardIndex = `${dashboardDist}/index.html`;
+const dashboardDist = resolve(import.meta.dir, "../dashboard/dist");
+const dashboardIndex = join(dashboardDist, "index.html");
 
 const staticMimeTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -188,7 +189,7 @@ const server = Bun.serve({
 
     // Fallback: serve dashboard static files
     const pathname = url.pathname;
-    const filePath = `${dashboardDist}${pathname}`;
+    const filePath = join(dashboardDist, pathname.replace(/^\//, ""));
     const file = Bun.file(filePath);
     if (await file.exists()) {
       const ext = pathname.slice(pathname.lastIndexOf("."));

@@ -1,6 +1,9 @@
-const root = new URL("..", import.meta.url).pathname;
+import { join, resolve } from "node:path";
+
+const root = resolve(import.meta.dir, "..");
 const port = process.env.PORT || "1930";
 const dashboardPort = process.env.DASHBOARD_PORT || "1931";
+const bunExecutable = process.env.BUN_EXE || process.env.BUN_BIN || "C:/Users/ASUS/.bun/bin/bun.exe";
 
 function spawnProcess(name: string, command: string[], cwd = root) {
   const proc = Bun.spawn(command, {
@@ -68,16 +71,17 @@ console.log(`Backend:   http://localhost:${port}`);
 console.log(`Dashboard: http://localhost:${dashboardPort}`);
 console.log(`API Key:   ${process.env.API_KEY || "pool-proxy-secret-key"}\n`);
 
-children.push(spawnProcess("backend", ["bun", "src/index.ts"]));
+children.push(spawnProcess("backend", [bunExecutable, "src/index.ts"]));
 children.push(
   spawnProcess("dashboard", [
-    "bunx",
+    bunExecutable,
+    "x",
     "vite",
     "--host",
     "0.0.0.0",
     "--port",
     dashboardPort,
-  ], `${root}/dashboard`)
+  ], join(root, "dashboard"))
 );
 
 await new Promise(() => {});
