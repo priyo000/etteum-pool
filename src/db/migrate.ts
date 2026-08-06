@@ -77,6 +77,85 @@ const BOOTSTRAP_SQL = `
     updated_at integer
   );
 
+  CREATE TABLE IF NOT EXISTS usage_summary (
+    id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    bucket text NOT NULL,
+    provider text NOT NULL,
+    model text NOT NULL,
+    total_requests integer DEFAULT 0,
+    success_requests integer DEFAULT 0,
+    error_requests integer DEFAULT 0,
+    prompt_tokens integer DEFAULT 0,
+    completion_tokens integer DEFAULT 0,
+    total_tokens integer DEFAULT 0,
+    credits_used real DEFAULT 0,
+    total_duration_ms integer DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS vcc_cards (
+    id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    number text NOT NULL,
+    exp_month text NOT NULL,
+    exp_year text NOT NULL,
+    cvv text NOT NULL,
+    name text DEFAULT 'John Doe',
+    status text DEFAULT 'active' NOT NULL,
+    used_by_account_id integer REFERENCES accounts(id),
+    created_at integer NOT NULL,
+    updated_at integer
+  );
+
+  CREATE TABLE IF NOT EXISTS vcc_transactions (
+    id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    account_id integer REFERENCES accounts(id),
+    card_last4 text NOT NULL,
+    card_brand text,
+    amount real,
+    currency text DEFAULT 'usd',
+    status text NOT NULL,
+    stripe_charge_id text,
+    created_at integer NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS image_studio_chats (
+    id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    title text,
+    messages text NOT NULL,
+    final_prompt text,
+    options text,
+    assist_model text,
+    created_at integer NOT NULL,
+    updated_at integer
+  );
+
+  CREATE TABLE IF NOT EXISTS image_studio_results (
+    id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    chat_id integer REFERENCES image_studio_chats(id) ON DELETE SET NULL,
+    prompt text NOT NULL,
+    type text DEFAULT 'image' NOT NULL,
+    aspect_ratio text DEFAULT '1:1' NOT NULL,
+    n integer DEFAULT 1 NOT NULL,
+    urls text NOT NULL,
+    credits_used real DEFAULT 0,
+    created_at integer NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS proxy_pool (
+    id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    url text NOT NULL,
+    type text DEFAULT 'http' NOT NULL,
+    label text,
+    status text DEFAULT 'active' NOT NULL,
+    last_used_at integer,
+    last_checked_at integer,
+    error_message text,
+    latency_ms integer,
+    success_count integer DEFAULT 0,
+    fail_count integer DEFAULT 0,
+    created_at integer NOT NULL,
+    updated_at integer
+  );
+
   CREATE INDEX IF NOT EXISTS request_logs_created_at_idx ON request_logs(created_at);
   CREATE INDEX IF NOT EXISTS request_logs_status_created_at_idx ON request_logs(status, created_at);
   CREATE INDEX IF NOT EXISTS request_logs_provider_created_at_idx ON request_logs(provider, created_at);
@@ -84,6 +163,16 @@ const BOOTSTRAP_SQL = `
   CREATE INDEX IF NOT EXISTS request_logs_account_idx ON request_logs(account_id);
   CREATE INDEX IF NOT EXISTS filter_rules_sort_order_idx ON filter_rules(sort_order);
   CREATE INDEX IF NOT EXISTS model_mappings_priority_idx ON model_mappings(priority);
+  CREATE UNIQUE INDEX IF NOT EXISTS usage_summary_bucket_provider_model_idx ON usage_summary(bucket, provider, model);
+  CREATE INDEX IF NOT EXISTS usage_summary_bucket_idx ON usage_summary(bucket);
+  CREATE INDEX IF NOT EXISTS usage_summary_provider_idx ON usage_summary(provider, bucket);
+  CREATE INDEX IF NOT EXISTS vcc_cards_status_idx ON vcc_cards(status);
+  CREATE INDEX IF NOT EXISTS vcc_transactions_account_idx ON vcc_transactions(account_id);
+  CREATE INDEX IF NOT EXISTS vcc_transactions_status_idx ON vcc_transactions(status);
+  CREATE INDEX IF NOT EXISTS image_studio_chats_updated_at_idx ON image_studio_chats(updated_at);
+  CREATE INDEX IF NOT EXISTS image_studio_results_created_at_idx ON image_studio_results(created_at);
+  CREATE INDEX IF NOT EXISTS image_studio_results_chat_idx ON image_studio_results(chat_id);
+  CREATE INDEX IF NOT EXISTS proxy_pool_status_idx ON proxy_pool(status);
 `;
 
 /**

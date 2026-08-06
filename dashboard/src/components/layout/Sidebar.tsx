@@ -21,6 +21,7 @@ import {
   Moon,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
@@ -49,6 +50,7 @@ const navSections: NavSection[] = [
   {
     title: "TOOLS",
     items: [
+      { label: "Chat", path: "/chat", icon: MessageSquare },
       { label: "Image Studio", path: "/image-studio", icon: Sparkles },
       { label: "Integration", path: "/integration", icon: Plug },
     ],

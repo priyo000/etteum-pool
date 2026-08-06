@@ -381,13 +381,16 @@ const QODER_MODELS: QoderModelDef[] = [
   // Code) don't trim history before we even reach Qoder. The server will
   // reject requests it actually can't serve, which is the right place to
   // enforce the real ceiling.
-  { id: "qd-Qwen3.7-Max",       upstream: "qmodel_latest", display_name: "Qwen3.7-Max",       max_input_tokens: 1000000, is_vl: true,  is_reasoning: false, price_factor: 0.2 },
-  { id: "qd-Qwen3.6-Plus",      upstream: "qmodel",        display_name: "Qwen3.6-Plus",      max_input_tokens: 180000, is_vl: true,  is_reasoning: false, price_factor: 0.2 },
-  { id: "qd-DeepSeek-V4-Pro",   upstream: "dmodel",        display_name: "DeepSeek-V4-Pro",   max_input_tokens: 180000, is_vl: true,  is_reasoning: true,  price_factor: 0.5 },
-  { id: "qd-DeepSeek-V4-Flash", upstream: "dfmodel",       display_name: "DeepSeek-V4-Flash", max_input_tokens: 180000, is_vl: true,  is_reasoning: true,  price_factor: 0.1 },
-  { id: "qd-GLM-5.1",           upstream: "gm51model",     display_name: "GLM-5.1",           max_input_tokens: 180000, is_vl: true,  is_reasoning: true,  price_factor: 0.6 },
-  { id: "qd-Kimi-K2.6",         upstream: "kmodel",        display_name: "Kimi-K2.6",         max_input_tokens: 256000, is_vl: true,  is_reasoning: false, price_factor: 0.3 },
-  { id: "qd-MiniMax-M2.7",      upstream: "mmodel",        display_name: "MiniMax-M2.7",      max_input_tokens: 180000, is_vl: true,  is_reasoning: false, price_factor: 0.2 },
+  { id: "qd-Qwen3.8-Max-Preview", upstream: "qmodel_38max", display_name: "Qwen3.8-Max-Preview", max_input_tokens: 180000, is_vl: true, is_reasoning: true, price_factor: 0.05 },
+  { id: "qd-Qwen3.7-Max",       upstream: "qmodel_latest", display_name: "Qwen3.7-Max",       max_input_tokens: 1000000, is_vl: true,  is_reasoning: false, price_factor: 0.25 },
+  { id: "qd-Qwen3.7-Plus",      upstream: "qmodel",        display_name: "Qwen3.7-Plus",      max_input_tokens: 1000000, is_vl: true,  is_reasoning: false, price_factor: 0.1 },
+  { id: "qd-Kimi-K3",           upstream: "kmodel_latest", display_name: "Kimi-K3",           max_input_tokens: 180000,  is_vl: true,  is_reasoning: false, price_factor: 0.8 },
+  { id: "qd-Kimi-K2.7-Code",    upstream: "kmodel",        display_name: "Kimi-K2.7-Code",    max_input_tokens: 256000,  is_vl: true,  is_reasoning: false, price_factor: 0.3 },
+  { id: "qd-GLM-5.2",           upstream: "gm51model",     display_name: "GLM-5.2",           max_input_tokens: 1000000, is_vl: true,  is_reasoning: true,  price_factor: 0.6 },
+  { id: "qd-DeepSeek-V4-Pro",   upstream: "dmodel",        display_name: "DeepSeek-V4-Pro",   max_input_tokens: 1000000, is_vl: true,  is_reasoning: true,  price_factor: 0.5 },
+  { id: "qd-DeepSeek-V4-Flash", upstream: "dfmodel",       display_name: "DeepSeek-V4-Flash", max_input_tokens: 1000000, is_vl: true,  is_reasoning: true,  price_factor: 0.1 },
+  { id: "qd-MiniMax-M3",        upstream: "mmodel",        display_name: "MiniMax-M3",        max_input_tokens: 1000000, is_vl: true,  is_reasoning: false, price_factor: 0.2 },
+  { id: "qd-Cantus",            upstream: "cantus",        display_name: "Cantus [Claude Fable 5]", max_input_tokens: 1000000, is_vl: true, is_reasoning: true, price_factor: 1.0 },
 ];
 
 const MODEL_CONFIGS: Record<string, QoderModelDef> = Object.fromEntries(
