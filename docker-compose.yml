@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  etteum-pool:
+    build: .
+    container_name: etteum-pool
+    restart: unless-stopped
+    expose:
+      - "1930"  # Backend API + Proxy (internal only)
+      - "1931"  # Dashboard (internal only)
+    volumes:
+      # Persist database
+      - ./data:/app/data
+      # Persist logs
+      - ./logs:/app/logs
+    environment:
+      # Core settings
+      - PORT=1930
+      - DASHBOARD_PORT=1931
+      - API_KEY=${API_KEY:-pool-proxy-secret-key}
+      - DATABASE_PATH=/app/data/poolprox3.db
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+
+      # Auth bot settings
+      - AUTH_SCRIPT_PATH=./scripts/auth/login.py
+      - AUTH_SCRIPT_CWD=./scripts/auth
+      - PYTHON_PATH=python3
+
+      # Browser settings
+      - BROWSER_ENGINE=${BROWSER_ENGINE:-camoufox}
+      - HEADLESS=${HEADLESS:-true}
+
+      # Proxy settings (optional)
+      - PROXY_URL=${PROXY_URL:-}
+
+      # VCC settings
+      - KIRO_PRO_UPGRADE=${KIRO_PRO_UPGRADE:-false}
+    networks:
+      - etteum-network
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  nginx:
+    image: nginx:alpine
+    container_name: etteum-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"      # HTTP (change to 8080 if 80 is used)
+      # - "443:443"  # HTTPS (uncomment if using SSL)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # SSL certificates (optional)
+      # - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - etteum-pool
+    networks:
+      - etteum-network
+
+networks:
+  etteum-network:
+    driver: bridge

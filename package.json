@@ -12,7 +12,9 @@
     "doctor": "bun scripts/doctor.ts",
     "setup": "bash install.sh",
     "setup:win": "powershell -ExecutionPolicy Bypass -File install.ps1",
-    "preflight": "bun scripts/preflight.ts"
+    "preflight": "bun scripts/preflight.ts",
+    "cli": "bun scripts/cli.ts",
+    "chat": "bun scripts/chat.ts"
   },
   "dependencies": {
     "cbor-x": "^1.6.4",

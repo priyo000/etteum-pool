@@ -17,6 +17,7 @@ const BotLogs = lazy(() => import("./pages/BotLogs"));
 const VccPool = lazy(() => import("./pages/VccPool"));
 const ProxyPool = lazy(() => import("./pages/ProxyPool"));
 const ImageStudio = lazy(() => import("./pages/ImageStudio"));
+const Chat = lazy(() => import("./pages/Chat"));
 const FilterRules = lazy(() => import("./pages/FilterRules"));
 const Integration = lazy(() => import("./pages/Integration"));
 const CodexOAuthCallback = lazy(() => import("./pages/CodexOAuthCallback"));
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="/filter-rules" element={<FilterRules />} />
           <Route path="/integration" element={<Integration />} />
           <Route path="/image-studio" element={<ImageStudio />} />
+          <Route path="/chat" element={<Chat />} />
           <Route path="/oauth/codex/callback" element={<CodexOAuthCallback />} />
         </Route>
       </Routes>

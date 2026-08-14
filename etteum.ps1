@@ -61,9 +61,7 @@ function Invoke-Start {
   }
 
   Write-Host "Starting Etteum..."
-  $proc = Start-Process -FilePath "bun" -ArgumentList "scripts/production.ts","--skip-build" `
-    -WorkingDirectory $ProjectDir -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile `
-    -WindowStyle Hidden -PassThru
+  $proc = Start-Process -FilePath "bun" -ArgumentList "scripts/produc..." -WorkingDirectory $ProjectDir -RedirectStandardOutput "logs\etteum-out.log" -RedirectStandardError "logs\etteum-err.log" -WindowStyle Hidden -PassThru
   $proc.Id | Out-File -FilePath $PidFile -Encoding ascii
   Start-Sleep -Seconds 1
 
